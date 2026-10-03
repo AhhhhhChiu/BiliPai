@@ -7,6 +7,9 @@ import com.android.purebilibili.data.model.response.DanmakuThumbupStatsItem
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import java.io.File
 import kotlin.math.abs
 
 data class DanmakuCloudFilterRule(
@@ -346,20 +349,33 @@ object DanmakuRepository {
     ): List<ByteArray> =
         DanmakuContentRepository.getDanmakuSegments(cid, durationMs, metadataSegmentCount)
 
-    suspend fun getSpecialDanmakuSegments(urls: List<String>): List<ByteArray> = withContext(Dispatchers.IO) {
-        urls.mapNotNull { rawUrl ->
-            val url = when {
-                rawUrl.startsWith("//") -> "https:$rawUrl"
-                else -> rawUrl
+    /** Full export is user-requested offline download, not the playback loading path. */
+    suspend fun downloadSpecialDanmaku(url: String, destination: File): Long? = withContext(Dispatchers.IO) {
+        val resolvedUrl = if (url.startsWith("//")) "https:$url" else url
+        try {
+            api.getDanmakuSpecialDm(resolvedUrl).use { body ->
+                body.byteStream().use { input ->
+                    destination.outputStream().use { output ->
+                        val buffer = ByteArray(8192)
+                        var bytes = 0L
+                        while (true) {
+                            currentCoroutineContext().ensureActive()
+                            val count = input.read(buffer)
+                            if (count < 0) break
+                            output.write(buffer, 0, count)
+                            bytes += count
+                        }
+                        bytes
+                    }
+                }
             }
-            try {
-                api.getDanmakuSpecialDm(url).bytes().takeIf { it.isNotEmpty() }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                android.util.Log.w("DanmakuRepo", " Special danmaku fetch failed: ${e.message}")
-                null
-            }
+        } catch (e: CancellationException) {
+            destination.delete()
+            throw e
+        } catch (e: Exception) {
+            destination.delete()
+            android.util.Log.w("DanmakuRepo", "Special danmaku export failed: ${e.message}")
+            null
         }
     }
 

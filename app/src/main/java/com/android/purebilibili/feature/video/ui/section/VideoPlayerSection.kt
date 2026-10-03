@@ -4335,6 +4335,7 @@ private fun VideoPlayerSectionContent(
         hostLifecycleStarted = hostLifecycleStarted
     )
         val advancedDanmakuList by danmakuManager.advancedDanmakuFlow.collectAsStateWithLifecycle()
+        val basDanmakuList by danmakuManager.basDanmakuFlow.collectAsStateWithLifecycle()
         val commandDanmakuList by danmakuManager.commandDanmakuFlow.collectAsStateWithLifecycle()
         val commandState = com.android.purebilibili.feature.video.ui.overlay.rememberCommandDanmakuOverlayState(
             bvid to (uiState as? VideoPlaybackUiState.Success)?.info?.cid
@@ -4447,6 +4448,15 @@ private fun VideoPlayerSectionContent(
                     viewport = viewport,
                     danmakuList = advancedDanmakuList,
                     player = playerState.player,
+                    opacity = danmakuOpacity,
+                    fontScale = danmakuFontScale,
+                    fontWeight = danmakuFontWeight,
+                    modifier = Modifier.fillMaxSize()
+                )
+                com.android.purebilibili.feature.video.ui.overlay.BasDanmakuOverlay(
+                    items = basDanmakuList,
+                    player = playerState.player,
+                    viewport = viewport,
                     opacity = danmakuOpacity,
                     fontScale = danmakuFontScale,
                     fontWeight = danmakuFontWeight,
