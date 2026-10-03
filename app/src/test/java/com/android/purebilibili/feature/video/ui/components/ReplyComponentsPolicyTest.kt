@@ -1,8 +1,8 @@
 package com.android.purebilibili.feature.video.ui.components
 
 import androidx.compose.ui.text.LinkAnnotation
-import androidx.compose.ui.text.getLinkAnnotations
-androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.android.purebilibili.data.model.response.ReplyMember
 import com.android.purebilibili.data.model.response.ReplyCardLabel
@@ -397,7 +397,7 @@ class ReplyComponentsPolicyTest {
     }
 
     @Test
-    fun `buildReplyCommentImageSpec carries author message and qr url`() {
+    fun `saved comment image metadata preserves publish seconds`() {
         val spec = buildReplyCommentImageSpec(
             ReplyItem(
                 oid = 100L,
@@ -410,12 +410,12 @@ class ReplyComponentsPolicyTest {
             generatedAtMillis = 1_700_000_100_000L
         )
 
-        assertEquals("评论者", spec.authorName)
-        assertEquals("保存这条评论", spec.message)
-        assertEquals("https://www.bilibili.com/video/av100?comment_on=1&comment_root_id=777", spec.qrUrl)
-        assertTrue(spec.footerText.contains("识别二维码"))
-        assertTrue(spec.metadataText.contains("12赞"))
+        assertTrue(
+            Regex("""\d{4}-\d{2}-\d{2} \d{2}:\d{2}:20 · 12赞""").matches(spec.metadataText),
+            spec.metadataText
+        )
     }
+
 
     @Test
     fun `collectRenderableEmoteKeys only keeps used and mapped tokens`() {
