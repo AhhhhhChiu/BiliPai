@@ -40,6 +40,7 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.ThumbDown
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -550,6 +551,7 @@ internal enum class ReplyActionSheetAction {
     FREE_COPY,
     COPY_USERNAME,
     QUERY_AUTHOR_HISTORY,
+    TIME_STYLE,
     SAVE,
     SHARE,
     REPLY,
@@ -576,6 +578,7 @@ internal fun buildReplyActionSheetActions(
             add(ReplyActionSheetAction.COPY_USERNAME)
         }
         if (canQueryAuthorHistory) add(ReplyActionSheetAction.QUERY_AUTHOR_HISTORY)
+        add(ReplyActionSheetAction.TIME_STYLE)
         add(ReplyActionSheetAction.SAVE)
         if (canShare) {
             add(ReplyActionSheetAction.SHARE)
@@ -608,6 +611,7 @@ private fun resolveReplyActionSheetLabel(
         ReplyActionSheetAction.FREE_COPY -> "自由复制"
         ReplyActionSheetAction.COPY_USERNAME -> "复制用户名"
         ReplyActionSheetAction.QUERY_AUTHOR_HISTORY -> "查询作者历史"
+        ReplyActionSheetAction.TIME_STYLE -> "评论时间样式"
         ReplyActionSheetAction.SAVE -> "保存评论"
         ReplyActionSheetAction.SHARE -> "分享评论"
         ReplyActionSheetAction.REPLY -> "回复"
@@ -2592,7 +2596,10 @@ internal fun ReplyMemberAvatar(
         AsyncImage(
             model = ImageRequest.Builder(LocalContext.current)
                 .data(FormatUtils.fixImageUrl(member.avatar))
-                .crossfade(!lightweightMode)
+                //  [防闪烁] crossfade 不能随 lightweightMode 翻转：改请求构造会让
+                //  Coil 视为新请求重新执行，切回评论页瞬间全部头像重载闪一下。
+                //  内存缓存命中本身不播淡入，恒定开启不损失滚动性能。
+                .crossfade(true)
                 .build(),
             contentDescription = null,
             contentScale = ContentScale.Crop,
@@ -2606,7 +2613,7 @@ internal fun ReplyMemberAvatar(
             AsyncImage(
                 model = ImageRequest.Builder(LocalContext.current)
                     .data(pendantImageUrl)
-                    .crossfade(!lightweightMode)
+                    .crossfade(true)
                     .build(),
                 contentDescription = "Avatar pendant",
                 contentScale = ContentScale.Fit,
@@ -2807,6 +2814,13 @@ internal fun ReplyActionSheet(
 ) {
     val queryAicu = com.android.purebilibili.feature.aicu.LocalAicuNavigation.current
     val canQueryAuthorHistory = queryAicu != null && queryAuthorUid > 0
+    val sheetContext = LocalContext.current
+    val sheetScope = rememberCoroutineScope()
+    //  [评论时间样式] 长按菜单直达开关：相对时间（默认，PiliPlus 规则）⇄ 绝对时间
+    //  （yyyy-MM-dd HH:mm:ss）。设置项全局持久化，评论区经 CompositionLocal 即时刷新。
+    val detailedTimeEnabled by SettingsManager
+        .getDetailedCommentTimeEnabled(sheetContext)
+        .collectAsStateWithLifecycle(initialValue = false)
     val actions = remember(
         canQueryAuthorHistory,
         canDelete,
@@ -2837,7 +2851,12 @@ internal fun ReplyActionSheet(
         ) {
             actions.forEach { action ->
                 ReplyActionSheetItem(
-                    label = resolveReplyActionSheetLabel(action, topActionLabel),
+                    label = if (action == ReplyActionSheetAction.TIME_STYLE) {
+                        if (detailedTimeEnabled) "评论时间样式：绝对（yyyy-MM-dd HH:mm:ss）"
+                        else "评论时间样式：相对"
+                    } else {
+                        resolveReplyActionSheetLabel(action, topActionLabel)
+                    },
                     isDestructive = isReplyActionDestructive(action),
                     onClick = {
                         when (action) {
@@ -2845,6 +2864,19 @@ internal fun ReplyActionSheet(
                             ReplyActionSheetAction.FREE_COPY -> onFreeCopy()
                             ReplyActionSheetAction.COPY_USERNAME -> onCopyUsername()
                             ReplyActionSheetAction.QUERY_AUTHOR_HISTORY -> queryAicu?.invoke(queryAuthorUid)
+                            ReplyActionSheetAction.TIME_STYLE -> sheetScope.launch {
+                                val next = !detailedTimeEnabled
+                                SettingsManager.setDetailedCommentTimeEnabled(sheetContext, next)
+                                Toast.makeText(
+                                    sheetContext,
+                                    if (next) {
+                                        "已切换为绝对时间：评论显示 yyyy-MM-dd HH:mm:ss"
+                                    } else {
+                                        "已切换为相对时间：评论按相对时间显示"
+                                    },
+                                    Toast.LENGTH_LONG
+                                ).show()
+                            }
                             ReplyActionSheetAction.SAVE -> onSave()
                             ReplyActionSheetAction.SHARE -> onShare()
                             ReplyActionSheetAction.REPLY -> onReply()
@@ -2886,9 +2918,14 @@ fun UpTag() {
 }
 
 @Composable
-fun TopTag() {
+fun TopTag(modifier: Modifier = Modifier) {
+    val labelStyle = MaterialTheme.typography.labelSmall
+    // TOP 没有下伸部，行框居中后仍会显得偏下；按字号补偿视觉中心。
+    val opticalOffset = with(androidx.compose.ui.platform.LocalDensity.current) {
+        (labelStyle.fontSize * -0.08f).toDp()
+    }
     Box(
-        modifier = Modifier
+        modifier = modifier
             .clip(AppShapes.container(ContainerLevel.Tag))
             .border(
                 width = 1.dp,
@@ -2896,12 +2933,23 @@ fun TopTag() {
                 shape = AppShapes.container(ContainerLevel.Tag)
             )
             .padding(horizontal = 3.dp, vertical = 2.dp),
+        contentAlignment = Alignment.Center,
     ) {
         AppText(
             text = "TOP",
-            style = MaterialTheme.typography.labelSmall,
+            modifier = Modifier.offset(y = opticalOffset),
+            style = labelStyle.copy(
+                lineHeight = labelStyle.fontSize,
+                platformStyle = androidx.compose.ui.text.PlatformTextStyle(includeFontPadding = false),
+                lineHeightStyle = androidx.compose.ui.text.style.LineHeightStyle(
+                    alignment = androidx.compose.ui.text.style.LineHeightStyle.Alignment.Center,
+                    trim = androidx.compose.ui.text.style.LineHeightStyle.Trim.Both,
+                ),
+            ),
             fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.primary
+            color = MaterialTheme.colorScheme.primary,
+            maxLines = 1,
+            tapToCopyEnabled = false,
         )
     }
 }

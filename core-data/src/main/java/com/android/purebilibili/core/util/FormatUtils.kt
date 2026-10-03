@@ -11,7 +11,7 @@ object FormatUtils {
     private const val COVER_IMAGE_LOW_WIDTH = 240
     private const val COVER_IMAGE_LOW_HEIGHT = 150
     private val detailedCommentTimeFormatter =
-        java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm", Locale.ROOT)
+        java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss", Locale.ROOT)
 
     /**
      * 将数字格式化为 B站风格 (例如: 1.2万)
@@ -151,7 +151,7 @@ object FormatUtils {
     }
 
     /**
-     * 评论时间：详细模式固定显示本地年月日时分，否则沿用 PiliPlus 相对时间规则。
+     * 评论时间：详细模式固定显示本地年月日时分秒，否则沿用 PiliPlus 相对时间规则。
      */
     fun formatCommentTime(
         timestampSeconds: Long,

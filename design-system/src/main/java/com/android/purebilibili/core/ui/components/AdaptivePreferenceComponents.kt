@@ -1674,12 +1674,36 @@ fun AppSearchEntry(
     modifier: Modifier = Modifier,
     placeholder: String = "搜索",
     containerColor: Color = Color.Unspecified,
+    centeredContent: Boolean = false,
 ) {
     val uiStyle = LocalAppUiStyle.current
     val miuixContainerColor = if (containerColor == Color.Unspecified) {
         MiuixTheme.colorScheme.surfaceContainerHigh
     } else {
         containerColor
+    }
+    if (centeredContent) {
+        val hintColor = if (uiStyle == AppUiStyle.MIUIX) MiuixTheme.colorScheme.onSurfaceContainerHigh
+            else MaterialTheme.colorScheme.onSurfaceVariant
+        Row(
+            modifier = modifier
+                .fillMaxWidth()
+                .heightIn(min = rememberAdaptiveListComponentVisualSpec().searchBarHeightDp.dp)
+                .clip(androidx.compose.foundation.shape.CircleShape)
+                .background(if (uiStyle == AppUiStyle.MIUIX) miuixContainerColor
+                    else if (containerColor != Color.Unspecified) containerColor
+                    else MaterialTheme.colorScheme.surfaceContainerHigh)
+                .clickable(onClick = onClick)
+                .padding(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            AppIcon(Icons.Default.Search, contentDescription = null, tint = hintColor, modifier = Modifier.size(24.dp))
+            Spacer(Modifier.width(8.dp))
+            AppText(placeholder, color = hintColor, style = MaterialTheme.typography.bodyLarge,
+                maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+        }
+        return
     }
     if (uiStyle == AppUiStyle.MIUIX) {
         InputField(

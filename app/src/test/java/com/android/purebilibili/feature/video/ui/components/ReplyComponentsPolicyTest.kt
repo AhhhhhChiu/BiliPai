@@ -416,7 +416,6 @@ class ReplyComponentsPolicyTest {
         )
     }
 
-
     @Test
     fun `collectRenderableEmoteKeys only keeps used and mapped tokens`() {
         val emoteMap = mapOf(

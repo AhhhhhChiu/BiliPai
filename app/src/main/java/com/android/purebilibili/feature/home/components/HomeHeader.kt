@@ -29,6 +29,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -1816,12 +1817,14 @@ fun HomeHeader(
     }
     
     val hideTopTabs = homeSettings?.hideTopTabs == true
-    val bottomBarSearchEnabled = homeSettings?.isBottomBarSearchEnabled == true && !hideTopTabs
+    val bottomBarSearchEnabled = homeSettings?.isBottomBarSearchEnabled == true && !hideTopTabs &&
+        homeSettings?.keepHomeTopSearchWithBottomSearch != true
     val topSearchMetrics = resolveHomeTopSearchRowMetrics(
         configuredHeight = resolveHomeTopSearchBarHeight(topChromePolicy),
         configuredTabsSpacing = resolveHomeTopSearchToTabsSpacing(topChromePolicy),
         bottomBarSearchEnabled = homeSettings?.isBottomBarSearchEnabled == true,
         hideTopTabs = hideTopTabs,
+        keepTopSearch = homeSettings?.keepHomeTopSearchWithBottomSearch == true,
     )
     val searchBarHeightDp = topSearchMetrics.height
     val topTabLabelMode = homeSettings?.topTabLabelMode
@@ -2689,10 +2692,15 @@ fun HomeHeader(
                                 isScrollInProgressProvider = { topChromeMotionPolicy.isScrolling },
                             ) { liquidChromeActive ->
                                 if (liquidChromeActive) {
+                                    val searchPillInteractionSource = remember { MutableInteractionSource() }
+                                    val searchPillPressed by searchPillInteractionSource.collectIsPressedAsState()
                                     Box(
                                         modifier = Modifier
                                             .fillMaxSize()
-                                            .clickable(role = Role.Button) {
+                                            .clickable(
+                                                interactionSource = searchPillInteractionSource,
+                                                role = Role.Button,
+                                            ) {
                                                 haptic(HapticType.LIGHT)
                                                 onSearchClick()
                                             }
@@ -2705,6 +2713,7 @@ fun HomeHeader(
                                             textFontSize = MaterialTheme.typography.bodyLarge.fontSize,
                                             iconTextGap = resolveHomeTopSearchIconTextGap(topChromePolicy),
                                             modifier = Modifier.fillMaxWidth(),
+                                            pressed = searchPillPressed,
                                         )
                                     }
                                 } else {
@@ -2714,6 +2723,7 @@ fun HomeHeader(
                                             onSearchClick()
                                         },
                                         placeholder = "搜索视频、UP主...",
+                                        centeredContent = true,
                                         modifier = Modifier.fillMaxWidth(),
                                     )
                                 }

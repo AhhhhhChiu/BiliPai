@@ -38,6 +38,7 @@ internal fun buildReplyCommentImageSpec(
     val likeText = item.like.takeIf { it > 0 }?.let { "${it}赞" }
     // 保存的评论图片始终保留完整发布时间（含秒），不受“详细评论时间显示”偏好影响
     val metadata = listOfNotNull(
+
         FormatUtils.formatPrecisePublishTime(
             timestampSeconds = item.ctime,
             pattern = "yyyy-MM-dd HH:mm:ss"
