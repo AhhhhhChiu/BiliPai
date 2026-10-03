@@ -478,6 +478,7 @@ internal class VideoContentPresentationState(
     val showInteractionActions: Boolean,
     val isVideoPlaying: Boolean,
     val bottomContentPadding: Dp,
+    val commentPullToRefreshEnabled: Boolean = true,
 )
 
 internal class VideoContentPrimaryActions(
@@ -592,6 +593,7 @@ internal fun VideoContentSection(
     val isQuickReturnLimitedForSharedElements = presentationState.isQuickReturnLimitedForSharedElements
     val sourceRouteForSharedElement = presentationState.sourceRouteForSharedElement
     val isPlayerCollapsed = presentationState.isPlayerCollapsed
+    val commentPullToRefreshEnabled = presentationState.commentPullToRefreshEnabled
     val sponsorVideoLabel = presentationState.sponsorVideoLabel
     val onlineCount = presentationState.onlineCount
     val showOnlineCount = presentationState.showOnlineCount
@@ -1012,6 +1014,7 @@ internal fun VideoContentSection(
                         onCommentReplyClick = onCommentReplyClick,
                         onLoadMoreReplies = onLoadMoreReplies,
                         onRefreshReplies = onRefreshReplies,
+                        pullToRefreshEnabled = commentPullToRefreshEnabled,
                         onImagePreview = { images, index, rect, textContent ->
                             previewImages = images
                             previewInitialIndex = index
@@ -1519,6 +1522,7 @@ internal fun VideoCommentTab(
     showHeader: Boolean = true,
     floatingHeaderContentPadding: Dp = 0.dp,
     onSearchClick: (() -> Unit)? = null,
+    pullToRefreshEnabled: Boolean = true,
 ) {
     val commentAppearance = rememberVideoCommentAppearance()
     val layoutDirection = androidx.compose.ui.platform.LocalLayoutDirection.current
@@ -1570,6 +1574,7 @@ internal fun VideoCommentTab(
         AdaptivePullToRefreshBox(
             isRefreshing = isRepliesRefreshing,
             onRefresh = onRefreshReplies,
+            enabled = pullToRefreshEnabled,
             indicatorTopInset = contentPadding.calculateTopPadding() + floatingHeaderContentPadding,
             modifier = Modifier.weight(1f).fillMaxWidth(),
         ) {

@@ -14,7 +14,7 @@ internal fun resolveVideoCommentFontSize(typography: Typography, role: VideoComm
     when (role) {
         VideoCommentTextRole.AUTHOR,
         VideoCommentTextRole.SUB_REPLY,
-        VideoCommentTextRole.BODY -> typography.bodySmall.fontSize
+        VideoCommentTextRole.BODY -> typography.bodyMedium.fontSize
         VideoCommentTextRole.METADATA, VideoCommentTextRole.ACTION_COUNT -> typography.labelSmall.fontSize
         VideoCommentTextRole.ACTION -> typography.labelMedium.fontSize
     }
