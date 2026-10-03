@@ -1561,7 +1561,6 @@ fun ReplyItemView(
                 .fillMaxWidth()
                 .padding(
                     top = 10.dp,
-                    bottom = 10.dp,
                     start = layoutPolicy.horizontalPaddingDp.dp,
                     end = layoutPolicy.horizontalPaddingDp.dp
                 )
@@ -1834,28 +1833,32 @@ fun ReplyItemView(
                     }
 
                     Spacer(modifier = Modifier.width(8.dp))
-                    AppIconButton(
-                        onClick = { onHateClick?.invoke() },
-                        enabled = onHateClick != null
-                    ) {
-                        AppIcon(
-                            imageVector = Icons.Filled.ThumbDown,
-                            contentDescription = if (isHated) "取消点踩" else "点踩评论",
-                            tint = if (isHated) MaterialTheme.colorScheme.error else appearance.actionTint,
-                            modifier = Modifier.size(16.dp)
-                        )
+                    Box(modifier = Modifier.height(32.dp)) {
+                        AppIconButton(
+                            onClick = { onHateClick?.invoke() },
+                            enabled = onHateClick != null
+                        ) {
+                            AppIcon(
+                                imageVector = Icons.Filled.ThumbDown,
+                                contentDescription = if (isHated) "取消点踩" else "点踩评论",
+                                tint = if (isHated) MaterialTheme.colorScheme.error else appearance.actionTint,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
                     }
 
                     // [新增] 删除按钮 (仅显示给本人)
                     if (onDeleteClick != null) {
                         Spacer(modifier = Modifier.width(16.dp))
-                        AppIconButton(onClick = onDeleteClick) {
-                            AppIcon(
-                                imageVector = Icons.Outlined.Delete,
-                                contentDescription = "删除",
-                                tint = appearance.actionTint,
-                                modifier = Modifier.size(16.dp),
-                            )
+                        Box(modifier = Modifier.height(32.dp)) {
+                            AppIconButton(onClick = onDeleteClick) {
+                                AppIcon(
+                                    imageVector = Icons.Outlined.Delete,
+                                    contentDescription = "删除",
+                                    tint = appearance.actionTint,
+                                    modifier = Modifier.size(16.dp),
+                                )
+                            }
                         }
                     }
                 }
