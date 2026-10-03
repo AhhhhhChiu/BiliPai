@@ -1,6 +1,7 @@
 package com.android.purebilibili.feature.video.danmaku
 
 import com.android.purebilibili.danmaku.parser.*
+import com.android.purebilibili.data.model.response.GradeDanmakuSummary
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -125,6 +126,32 @@ class CommandDanmakuPolicyTest {
     }
 
     @Test
+    fun `actual vote desc options stay inline with canonical one based indices`() {
+        val item = buildCommandDanmakuItem(commandDm(
+            command = "#VOTE#",
+            extra = """{"vote_id":21517957,"question":"感觉兹白以前不高冷啊","my_vote":0,"options":[{"idx":1,"desc":"挺近人的仙人"},{"idx":2,"desc":"她超爱人好嘛"},{"idx":3,"desc":"蓝疯子太疯了"},{"idx":4,"desc":"总会遇到神人"}]}"""
+        ))
+
+        assertNotNull(item)
+        assertEquals(listOf("挺近人的仙人", "她超爱人好嘛", "蓝疯子太疯了", "总会遇到神人"), item.voteOptions.map { it.label })
+        assertEquals(listOf(1, 2, 3, 4), item.voteOptions.map { it.optionIndex })
+        assertNull(item.voteSelectedIndex)
+    }
+
+    @Test
+    fun `vote indices and restored selection do not depend on payload array order`() {
+        val item = buildCommandDanmakuItem(commandDm(
+            command = "#VOTE#",
+            extra = """{"vote_id":21517957,"question":"来投票","my_vote":4,"options":[{"idx":4,"desc":"第四项"},{"idx":1,"desc":"第一项"}]}"""
+        ))
+
+        assertNotNull(item)
+        assertEquals(listOf(4, 1), item.voteOptions.map { it.optionIndex })
+        assertEquals(4, item.voteSelectedIndex)
+        assertEquals("第四项", item.voteOptions.first { it.optionIndex == item.voteSelectedIndex }.label)
+    }
+
+    @Test
     fun `build grade command item with default score options`() {
         val cmd = commandDm(
             command = "#GRADE#",
@@ -141,6 +168,64 @@ class CommandDanmakuPolicyTest {
         // 默认 5 档分数：2/4/6/8/10
         assertEquals(listOf(2, 4, 6, 8, 10), item.voteOptions.map { it.score })
         assertEquals(VOTE_DANMAKU_OVERLAY_DURATION_MS, item.durationMs)
+    }
+
+    @Test
+    fun `phone reference video grade exposes its question and 76 real participants`() {
+        val item = buildCommandDanmakuItem(commandDm(
+            command = "#GRADE#",
+            progress = 12400,
+            extra = """{"msg":"合着你们认识啊","grade_id":8593978,"mid_score":0,"count":76,"avg_score":10,"duration":5000,"summary_duration":6000,"posX":333.5,"posY":198.75,"posX_2":50,"posY_2":53}"""
+        ))
+
+        assertNotNull(item)
+        assertEquals("合着你们认识啊", item.voteTitle)
+        assertEquals("合着你们认识啊", item.content)
+        assertEquals("8593978", item.voteId)
+        assertEquals(12400L, item.startTimeMs)
+        assertEquals(GradeDanmakuSummary(76L, 10.0), item.gradeSummary)
+        assertEquals(listOf(2, 4, 6, 8, 10), item.voteOptions.map { it.score })
+    }
+
+    @Test
+    fun `grade command preserves content title and restored personal score`() {
+        val item = buildCommandDanmakuItem(commandDm(
+            command = "#GRADE#",
+            content = "大家喜欢吃甜品吗",
+            extra = """{"grade_id":456,"count":139,"avg_score":9.8,"mid_score":8}"""
+        ))
+
+        assertNotNull(item)
+        assertEquals("大家喜欢吃甜品吗", item.voteTitle)
+        assertEquals("大家喜欢吃甜品吗", item.content)
+        assertEquals(GradeDanmakuSummary(139L, 9.8, 8), item.gradeSummary)
+    }
+
+    @Test
+    fun `grade summary keeps actual zeros without treating zero as a personal grade`() {
+        val item = buildCommandDanmakuItem(commandDm(
+            command = "#GRADE#",
+            extra = """{"grade_id":456,"msg":"来打分","count":0,"avg_score":0,"mid_score":0}"""
+        ))
+
+        assertNotNull(item)
+        assertEquals(GradeDanmakuSummary(0L, 0.0), item.gradeSummary)
+    }
+
+    @Test
+    fun `grade summary leaves missing malformed and out of range statistics unavailable`() {
+        val extras = listOf(
+            """{"grade_id":456,"msg":"来打分"}""",
+            """{"grade_id":456,"count":-1,"avg_score":10.1,"mid_score":3}""",
+            """{"grade_id":456,"count":"unknown","avg_score":"NaN","mid_score":12}""",
+            """{"grade_id":456,"count":null,"avg_score":"Infinity","mid_score":null}""",
+            """{"grade_id":456,"count":1.5,"avg_score":-1,"mid_score":-2}"""
+        )
+        for (extra in extras) {
+            val item = buildCommandDanmakuItem(commandDm(command = "#GRADE#", extra = extra))
+            assertNotNull(item)
+            assertEquals(GradeDanmakuSummary(), item.gradeSummary)
+        }
     }
 
     @Test
@@ -218,24 +303,37 @@ class CommandDanmakuPolicyTest {
     }
 
     @Test
-    fun `build attention command item uses three second overlay duration`() {
+    fun `combined triple reference remains visible at the supplied 24 second timestamp`() {
         val cmd = commandDm(
             command = "#ATTENTION#",
-            content = "关注按钮",
-            extra = """{"duration":6000,"posX":240,"posY":160,"icon":"https://example.com/follow.png","type":2}""",
-            progress = 157818
+            content = "关注弹幕",
+            extra = """{"duration":5000,"posX":346.84,"posY":202.5,"posX_2":52,"posY_2":54,"type":2}""",
+            progress = 20000
         )
 
         val item = buildCommandDanmakuItem(cmd)
-
         assertNotNull(item)
-        assertEquals(CommandDanmakuType.ATTENTION, item.type)
-        assertEquals(157818L, item.startTimeMs)
-        assertEquals(COMMAND_DANMAKU_OVERLAY_DURATION_MS, item.durationMs)
-        assertEquals(240f, item.posX)
-        assertEquals(160f, item.posY)
         assertEquals(2, item.attentionType)
-        assertEquals("https://example.com/follow.png", item.iconUrl)
+        assertEquals(0.52f, item.positionXRatio)
+        assertEquals(0.54f, item.positionYRatio)
+        assertTrue(24000L in item.startTimeMs..(item.startTimeMs + item.durationMs))
+        assertTrue(25001L !in item.startTimeMs..(item.startTimeMs + item.durationMs))
+    }
+
+    @Test
+    fun `standalone triple reference preserves its edge position and five second lifetime`() {
+        val item = buildCommandDanmakuItem(commandDm(
+            command = "#ATTENTION#",
+            content = "关注弹幕",
+            extra = """{"duration":5000,"posX":667,"posY":375,"posX_2":100,"posY_2":100,"type":1}""",
+            progress = 0
+        ))
+        assertNotNull(item)
+        assertEquals(1, item.attentionType)
+        assertEquals(1f, item.positionXRatio)
+        assertEquals(1f, item.positionYRatio)
+        assertTrue(4900L in item.startTimeMs..(item.startTimeMs + item.durationMs))
+        assertTrue(5001L !in item.startTimeMs..(item.startTimeMs + item.durationMs))
     }
 
     @Test

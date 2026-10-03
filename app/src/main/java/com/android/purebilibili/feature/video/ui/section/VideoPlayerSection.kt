@@ -4477,39 +4477,92 @@ private fun VideoPlayerSectionContent(
                     onTripleClick = onTriple,
                     onVoteSubmit = { item, option, optionIndex ->
                         val success = uiState as? VideoPlaybackUiState.Success
-                        if (success != null && item.voteId.isNotBlank()) {
+                        if (item.voteKind == com.android.purebilibili.feature.video.danmaku.VoteDanmakuKind.GRADE) {
                             val gradeScore = option.score
-                            settingsScope.launch {
-                                if (gradeScore != null) {
-                                    val result = com.android.purebilibili.data.repository.DanmakuRepository.submitGradeDanmaku(
-                                        aid = success.info.aid,
-                                        cid = success.info.cid,
-                                        progress = item.startTimeMs,
-                                        gradeId = item.voteId,
-                                        gradeScore = gradeScore
-                                    )
-                                    if (result.isFailure) {
-                                        android.widget.Toast.makeText(
-                                            context,
-                                            result.exceptionOrNull()?.message ?: "打分失败",
-                                            android.widget.Toast.LENGTH_SHORT
-                                        ).show()
-                                    }
-                                } else {
-                                    // 互动投票弹幕的 vote_id 属于标准投票系统，复用 do_vote
-                                    val voteIdLong = item.voteId.toLongOrNull()
-                                    if (voteIdLong != null) {
-                                        val result = com.android.purebilibili.data.repository.DynamicVoteRepository.submitVote(
-                                            voteId = voteIdLong,
-                                            optionIndexes = listOf(optionIndex)
+                            if (success == null || success.info.aid <= 0L || success.info.cid <= 0L ||
+                                item.voteId.toLongOrNull() == null || gradeScore == null
+                            ) {
+                                commandState.endSubmission(item.id)
+                                android.widget.Toast.makeText(
+                                    context,
+                                    if (success == null) "打分失败：播放信息不可用" else "打分失败：缺少有效打分信息",
+                                    android.widget.Toast.LENGTH_SHORT
+                                ).show()
+                            } else {
+                                // Enter the finally block even if this UI scope is already cancelled.
+                                settingsScope.launch(start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) {
+                                    var accepted = false
+                                    try {
+                                        val result = com.android.purebilibili.data.repository.DanmakuRepository.submitGradeDanmaku(
+                                            aid = success.info.aid,
+                                            cid = success.info.cid,
+                                            progress = item.startTimeMs,
+                                            gradeId = item.voteId,
+                                            gradeScore = gradeScore
                                         )
-                                        if (result.isFailure) {
+                                        if (result.isSuccess) {
+                                            accepted = true
+                                            commandState.completeGradeSubmission(item, option)
+                                            val summary = com.android.purebilibili.data.repository.DanmakuRepository.getGradeDanmakuSummary(
+                                                cid = success.info.cid,
+                                                aid = success.info.aid,
+                                                gradeId = item.voteId
+                                            )
+                                            summary.onSuccess { commandState.updateGradeSummary(item.id, it) }
+                                                .onFailure {
+                                                    android.widget.Toast.makeText(
+                                                        context,
+                                                        "打分成功，统计暂不可用",
+                                                        android.widget.Toast.LENGTH_SHORT
+                                                    ).show()
+                                                }
+                                        } else {
                                             android.widget.Toast.makeText(
                                                 context,
-                                                result.exceptionOrNull()?.message ?: "投票失败",
+                                                result.exceptionOrNull()?.message ?: "打分失败",
                                                 android.widget.Toast.LENGTH_SHORT
                                             ).show()
                                         }
+                                    } catch (e: kotlinx.coroutines.CancellationException) {
+                                        throw e
+                                    } catch (e: Exception) {
+                                        android.widget.Toast.makeText(
+                                            context,
+                                            if (accepted) "打分成功，统计暂不可用" else e.message ?: "打分失败",
+                                            android.widget.Toast.LENGTH_SHORT
+                                        ).show()
+                                    } finally {
+                                        // This only releases pending work; an accepted score remains confirmed.
+                                        commandState.endSubmission(item.id)
+                                    }
+                                }
+                            }
+                        } else {
+                            val voteId = item.voteId.toLongOrNull()
+                            if (success == null || voteId == null) {
+                                commandState.endSubmission(item.id)
+                                android.widget.Toast.makeText(
+                                    context,
+                                    "投票失败：缺少有效投票信息",
+                                    android.widget.Toast.LENGTH_SHORT
+                                ).show()
+                            } else {
+                                settingsScope.launch(start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) {
+                                    try {
+                                        val result = com.android.purebilibili.data.repository.DynamicVoteRepository.submitVote(
+                                            voteId = voteId,
+                                            optionIndexes = listOf(optionIndex)
+                                        )
+                                        result.onSuccess { commandState.completeVoteSubmission(item, option) }
+                                            .onFailure {
+                                                android.widget.Toast.makeText(
+                                                    context,
+                                                    it.message ?: "投票失败",
+                                                    android.widget.Toast.LENGTH_SHORT
+                                                ).show()
+                                            }
+                                    } finally {
+                                        commandState.endSubmission(item.id)
                                     }
                                 }
                             }

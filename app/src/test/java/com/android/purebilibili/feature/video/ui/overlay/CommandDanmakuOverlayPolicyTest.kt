@@ -78,4 +78,20 @@ class CommandDanmakuOverlayPolicyTest {
         assertEquals(0, resolveCommandDanmakuVerticalOffsetPx(320, 400, 0.8f))
         assertEquals(0, resolveCommandDanmakuVerticalOffsetPx(320, 128, -0.2f))
     }
+
+    @Test
+    fun `attention percentage positions keep both edges clear inside the viewport`() {
+        assertEquals(12, resolveAttentionCommandOffsetPx(320, 120, 0f, 12))
+        assertEquals(100, resolveAttentionCommandOffsetPx(320, 120, 0.5f, 12))
+        assertEquals(188, resolveAttentionCommandOffsetPx(320, 120, 1f, 12))
+        assertEquals(12, resolveAttentionCommandOffsetPx(320, 120, -1f, 12))
+        assertEquals(188, resolveAttentionCommandOffsetPx(320, 120, 2f, 12))
+    }
+
+    @Test
+    fun `attention placement handles oversized cards and unknown percentages without invalid offsets`() {
+        assertEquals(0, resolveAttentionCommandOffsetPx(80, 120, 1f, 12))
+        assertEquals(0, resolveAttentionCommandOffsetPx(0, 120, 0.5f, 12))
+        assertEquals(100, resolveAttentionCommandOffsetPx(320, 120, Float.NaN, 12))
+    }
 }
