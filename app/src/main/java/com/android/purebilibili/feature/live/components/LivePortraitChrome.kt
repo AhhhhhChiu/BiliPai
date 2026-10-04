@@ -729,7 +729,8 @@ internal fun LivePortraitBottomBar(
         if (onLike != null) {
             LiveLikeButton(
                 tint = LiveStatusPalette.MediaContent,
-                onLike = onLike
+                onLike = onLike,
+                modifier = Modifier.size(44.dp)
             )
         }
 
@@ -829,7 +830,7 @@ internal fun LivePortraitMoreSheet(
                             else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
                         style = MaterialTheme.typography.bodyLarge,
                         modifier = Modifier
-                            .heightIn(min = 48.dp)
+                            .heightIn(min = 40.dp)
                             .padding(AppSpacingTokens.Medium),
                     )
                 }

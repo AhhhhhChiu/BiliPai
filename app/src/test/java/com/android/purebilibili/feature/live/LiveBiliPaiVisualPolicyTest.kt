@@ -35,9 +35,9 @@ class LiveBiliPaiVisualPolicyTest {
         assertEquals(90, ios.roomCardDetailsMinHeightDp)
         assertEquals(88, md3.roomCardDetailsMinHeightDp)
         assertEquals(95, miuix.roomCardDetailsMinHeightDp)
-        assertEquals(48, ios.playerButtonTouchTargetDp)
-        assertEquals(48, md3.playerButtonTouchTargetDp)
-        assertEquals(48, miuix.playerButtonTouchTargetDp)
+        assertEquals(40, ios.playerButtonTouchTargetDp)
+        assertEquals(40, md3.playerButtonTouchTargetDp)
+        assertEquals(40, miuix.playerButtonTouchTargetDp)
         assertEquals(38, ios.playerButtonVisualSizeDp)
         assertEquals(40, md3.playerButtonVisualSizeDp)
         assertEquals(38, miuix.playerButtonVisualSizeDp)
@@ -124,14 +124,14 @@ class LiveBiliPaiVisualPolicyTest {
     }
 
     @Test
-    fun `live overlay controls keep named density and accessible touch targets`() {
+    fun `live overlay controls keep compact button density`() {
         val chatInput = resolveLiveChatInputVisualSpec()
         val playerControl = resolveLivePlayerControlVisualSpec()
         val sheet = resolveLiveSheetVisualSpec()
 
-        assertEquals(48, chatInput.controlSizeDp)
-        assertEquals(48, chatInput.sendButtonSizeDp)
-        assertEquals(48, playerControl.rowHeightDp)
+        assertEquals(40, chatInput.controlSizeDp)
+        assertEquals(40, chatInput.sendButtonSizeDp)
+        assertEquals(40, playerControl.rowHeightDp)
         assertEquals(420, sheet.emoticonListMaxHeightDp)
         assertEquals(360, sheet.contributionListMaxHeightDp)
     }

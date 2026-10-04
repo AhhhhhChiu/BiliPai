@@ -134,7 +134,7 @@ internal fun resolveLiveVisualSpec(
         ),
         maxContentWidthDp = 1200,
         roomCardDetailsMinHeightDp = roomCardDetailsMinHeightDp,
-        playerButtonTouchTargetDp = 48,
+        playerButtonTouchTargetDp = 40,
         playerButtonVisualSizeDp = playerButtonVisualSizeDp,
         playerQualityDialogWidthDp = 280,
         emptyStateContainerSizeDp = 64,
@@ -143,10 +143,10 @@ internal fun resolveLiveVisualSpec(
 }
 
 internal fun resolveLiveChatInputVisualSpec(): LiveChatInputVisualSpec = LiveChatInputVisualSpec(
-    controlSizeDp = 48,
+    controlSizeDp = 40,
     inputFieldHeightDp = 40,
     iconSizeDp = 20,
-    sendButtonSizeDp = 48,
+    sendButtonSizeDp = 40,
     sendIconOffsetXDp = -2,
     sendIconOffsetYDp = 2,
     overlayMessageSpaceDp = 10,
@@ -162,7 +162,7 @@ internal fun resolveLiveSheetVisualSpec(): LiveSheetVisualSpec = LiveSheetVisual
 
 internal fun resolveLivePlayerControlVisualSpec(): LivePlayerControlVisualSpec =
     LivePlayerControlVisualSpec(
-        rowHeightDp = 48,
+        rowHeightDp = 40,
         iconSizeDp = 14,
     )
 

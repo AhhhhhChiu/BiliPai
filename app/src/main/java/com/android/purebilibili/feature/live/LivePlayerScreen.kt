@@ -1624,7 +1624,7 @@ fun LivePlayerScreen(
                             .align(Alignment.BottomEnd)
                             .navigationBarsPadding()
                             .padding(AppSpacingTokens.Medium)
-                            .heightIn(min = 48.dp),
+                            .heightIn(min = 40.dp),
                     ) {
                         Box(
                             modifier = Modifier.padding(horizontal = AppSpacingTokens.Large),
