@@ -272,7 +272,11 @@ class VideoEngagementViewModel(
             // 导致某次点击"吞掉"（无状态变化、无动画）。
             likeToggleMutex.withLock {
                 val wasLiked = currentlyLiked ?: _uiState.value.isLiked
-                actions.toggleLike(targetAid, wasLiked, targetBvid)
+                // NonCancellable：退出详情页会取消 viewModelScope，在途的切换请求若被
+                // 掐断，服务端会停留在上一次状态，重新进入时表现为点赞失效。
+                withContext(kotlinx.coroutines.NonCancellable) {
+                    actions.toggleLike(targetAid, wasLiked, targetBvid)
+                }
                     .onSuccess { liked ->
                         if (_uiState.value.subject?.generation != state.subject?.generation) return@onSuccess
                         locallyModifiedFields = locallyModifiedFields + VideoEngagementField.LIKE +
