@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -214,8 +215,9 @@ private fun TvHomeContent(
         headerFocus = continuingFocus, preferHeader = preferContinue,
         header = {
             Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                // 海报式首屏：轮播容器与封面同为 16:9 满宽，封面完整铺满不裁切。
                 TvHeroCarousel(state.catalog.items, navigationFocus, model::playItem, model::openVideo, onAmbientChange,
-                    Modifier.fillMaxWidth().height(260.dp), autoAdvanceEnabled = autoAdvanceEnabled && LocalTvInteractive.current)
+                    Modifier.fillMaxWidth().aspectRatio(16f / 9f), autoAdvanceEnabled = autoAdvanceEnabled && LocalTvInteractive.current)
                 TvContinueRow(state.continuing, state.catalog.focusedId, continuingFocus, navigationFocus,
                     model::playItem, { model.focusItem(it, state.route.key) })
                 Text("为你推荐", style = MaterialTheme.typography.titleLarge)
