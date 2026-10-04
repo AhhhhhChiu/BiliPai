@@ -4356,6 +4356,7 @@ private fun VideoPlayerSectionContent(
         hostLifecycleStarted = hostLifecycleStarted
     )
         val advancedDanmakuList by danmakuManager.advancedDanmakuFlow.collectAsStateWithLifecycle()
+        val basDanmakuList by danmakuManager.basDanmakuFlow.collectAsStateWithLifecycle()
         val commandDanmakuList by danmakuManager.commandDanmakuFlow.collectAsStateWithLifecycle()
         val commandState = com.android.purebilibili.feature.video.ui.overlay.rememberCommandDanmakuOverlayState(
             bvid to (uiState as? VideoPlaybackUiState.Success)?.info?.cid
@@ -4423,6 +4424,7 @@ private fun VideoPlayerSectionContent(
                         )
                     }
                 }
+                val danmakuContainerHeightPx = with(density) { maxHeight.roundToPx() }
                 val danmakuSurfaceModifier = if (useScreenTopDanmakuSurface) {
                     Modifier.fillMaxSize()
                 } else {
@@ -4438,6 +4440,7 @@ private fun VideoPlayerSectionContent(
                     AndroidView(
                         factory = { ctx ->
                             DanmakuRenderView(ctx).apply {
+                                danmakuManager.isFullscreenSurface = isFullscreen
                                 danmakuManager.updateViewport(viewport)
                                 addOnLayoutChangeListener { view, _, _, _, _, _, _, _, _ ->
                                     if (view.width > 0 && view.height > 0) danmakuManager.attachView(this)
@@ -4456,6 +4459,7 @@ private fun VideoPlayerSectionContent(
                             Logger.d("VideoPlayerSection") {
                                 "DanmakuView update: size=${view.width}x${view.height}, isFullscreen=$isFullscreen"
                             }
+                            danmakuManager.isFullscreenSurface = isFullscreen
                             // 只有当视图有有效尺寸时才 re-attach
                             if (view.width > 0 && view.height > 0) {
                                 val sizeTag = "${view.width}x${view.height}"
@@ -4482,8 +4486,54 @@ private fun VideoPlayerSectionContent(
                     fontWeight = danmakuFontWeight,
                     modifier = Modifier.fillMaxSize()
                 )
+                com.android.purebilibili.feature.video.ui.overlay.BasDanmakuOverlay(
+                    items = basDanmakuList,
+                    player = playerState.player,
+                    viewport = viewport,
+                    opacity = danmakuOpacity,
+                    fontScale = danmakuFontScale,
+                    fontWeight = danmakuFontWeight,
+                    modifier = Modifier.fillMaxSize()
+                )
+                // Keep the classic controls footprint reserved, including in compact/hidden chrome.
+                val commandControlsLayout = remember(uiLayoutWidthDp) {
+                    com.android.purebilibili.feature.video.ui.overlay.resolveBottomControlBarLayoutPolicy(uiLayoutWidthDp)
+                }
+                val commandProgressLayout = remember(uiLayoutWidthDp) {
+                    com.android.purebilibili.feature.video.ui.overlay.resolveVideoProgressBarLayoutPolicy(uiLayoutWidthDp)
+                }
+                val requestedCommandProgressPlacement by remember(context) {
+                    com.android.purebilibili.core.store.SettingsManager.getPlayerProgressPlacement(context)
+                }.collectAsStateWithLifecycle(
+                    initialValue = com.android.purebilibili.core.store.PlayerProgressPlacement.ABOVE_CONTROLS
+                )
+                val commandProgressPlacement = com.android.purebilibili.feature.video.ui.overlay.resolveVideoDetailProgressPlacement(
+                    requestedPlacement = requestedCommandProgressPlacement,
+                    isFullscreen = isFullscreen,
+                )
+                val commandControlsBottomPaddingDp = com.android.purebilibili.feature.video.ui.overlay.resolveBottomControlBarBottomPaddingDp(
+                    defaultBottomPaddingDp = commandControlsLayout.bottomPaddingDp,
+                    progressPlacement = commandProgressPlacement,
+                )
+                val commandControlsReservePx = with(density) {
+                    (maxOf(
+                        commandControlsLayout.playButtonSizeDp,
+                        commandControlsLayout.danmakuInputHeightDp,
+                        com.android.purebilibili.feature.video.ui.overlay.resolveFullscreenToggleTouchTargetDp(
+                            commandControlsLayout.fullscreenIconSizeDp
+                        ),
+                    ) +
+                        commandProgressLayout.touchContainerHeightDp +
+                        commandControlsLayout.progressSpacingDp +
+                        commandControlsBottomPaddingDp).dp.roundToPx()
+                } + if (isFullscreen) WindowInsets.navigationBarsIgnoringVisibility.getBottom(density) else 0
                 com.android.purebilibili.feature.video.ui.overlay.CommandDanmakuOverlay(
                     viewport = viewport,
+                    bottomInsetPx = com.android.purebilibili.feature.video.ui.overlay.resolveCommandDanmakuBottomInsetPx(
+                        viewportHeightPx = viewport.heightPx,
+                        surfaceHeightPx = danmakuContainerHeightPx,
+                        controlsReserveHeightPx = commandControlsReservePx,
+                    ),
                     state = commandState,
                     fontScale = danmakuFontScale,
                     items = visibleCommandDanmakuList,
@@ -4492,39 +4542,92 @@ private fun VideoPlayerSectionContent(
                     onTripleClick = onTriple,
                     onVoteSubmit = { item, option, optionIndex ->
                         val success = uiState as? VideoPlaybackUiState.Success
-                        if (success != null && item.voteId.isNotBlank()) {
+                        if (item.voteKind == com.android.purebilibili.feature.video.danmaku.VoteDanmakuKind.GRADE) {
                             val gradeScore = option.score
-                            settingsScope.launch {
-                                if (gradeScore != null) {
-                                    val result = com.android.purebilibili.data.repository.DanmakuRepository.submitGradeDanmaku(
-                                        aid = success.info.aid,
-                                        cid = success.info.cid,
-                                        progress = item.startTimeMs,
-                                        gradeId = item.voteId,
-                                        gradeScore = gradeScore
-                                    )
-                                    if (result.isFailure) {
-                                        android.widget.Toast.makeText(
-                                            context,
-                                            result.exceptionOrNull()?.message ?: "打分失败",
-                                            android.widget.Toast.LENGTH_SHORT
-                                        ).show()
-                                    }
-                                } else {
-                                    // 互动投票弹幕的 vote_id 属于标准投票系统，复用 do_vote
-                                    val voteIdLong = item.voteId.toLongOrNull()
-                                    if (voteIdLong != null) {
-                                        val result = com.android.purebilibili.data.repository.DynamicVoteRepository.submitVote(
-                                            voteId = voteIdLong,
-                                            optionIndexes = listOf(optionIndex)
+                            if (success == null || success.info.aid <= 0L || success.info.cid <= 0L ||
+                                item.voteId.toLongOrNull() == null || gradeScore == null
+                            ) {
+                                commandState.endSubmission(item.id)
+                                android.widget.Toast.makeText(
+                                    context,
+                                    if (success == null) "打分失败：播放信息不可用" else "打分失败：缺少有效打分信息",
+                                    android.widget.Toast.LENGTH_SHORT
+                                ).show()
+                            } else {
+                                // Enter the finally block even if this UI scope is already cancelled.
+                                settingsScope.launch(start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) {
+                                    var accepted = false
+                                    try {
+                                        val result = com.android.purebilibili.data.repository.DanmakuRepository.submitGradeDanmaku(
+                                            aid = success.info.aid,
+                                            cid = success.info.cid,
+                                            progress = item.startTimeMs,
+                                            gradeId = item.voteId,
+                                            gradeScore = gradeScore
                                         )
-                                        if (result.isFailure) {
+                                        if (result.isSuccess) {
+                                            accepted = true
+                                            commandState.completeGradeSubmission(item, option)
+                                            val summary = com.android.purebilibili.data.repository.DanmakuRepository.getGradeDanmakuSummary(
+                                                cid = success.info.cid,
+                                                aid = success.info.aid,
+                                                gradeId = item.voteId
+                                            )
+                                            summary.onSuccess { commandState.updateGradeSummary(item.id, it) }
+                                                .onFailure {
+                                                    android.widget.Toast.makeText(
+                                                        context,
+                                                        "打分成功，统计暂不可用",
+                                                        android.widget.Toast.LENGTH_SHORT
+                                                    ).show()
+                                                }
+                                        } else {
                                             android.widget.Toast.makeText(
                                                 context,
-                                                result.exceptionOrNull()?.message ?: "投票失败",
+                                                result.exceptionOrNull()?.message ?: "打分失败",
                                                 android.widget.Toast.LENGTH_SHORT
                                             ).show()
                                         }
+                                    } catch (e: kotlinx.coroutines.CancellationException) {
+                                        throw e
+                                    } catch (e: Exception) {
+                                        android.widget.Toast.makeText(
+                                            context,
+                                            if (accepted) "打分成功，统计暂不可用" else e.message ?: "打分失败",
+                                            android.widget.Toast.LENGTH_SHORT
+                                        ).show()
+                                    } finally {
+                                        // This only releases pending work; an accepted score remains confirmed.
+                                        commandState.endSubmission(item.id)
+                                    }
+                                }
+                            }
+                        } else {
+                            val voteId = item.voteId.toLongOrNull()
+                            if (success == null || voteId == null) {
+                                commandState.endSubmission(item.id)
+                                android.widget.Toast.makeText(
+                                    context,
+                                    "投票失败：缺少有效投票信息",
+                                    android.widget.Toast.LENGTH_SHORT
+                                ).show()
+                            } else {
+                                settingsScope.launch(start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) {
+                                    try {
+                                        val result = com.android.purebilibili.data.repository.DynamicVoteRepository.submitVote(
+                                            voteId = voteId,
+                                            optionIndexes = listOf(optionIndex)
+                                        )
+                                        result.onSuccess { commandState.completeVoteSubmission(item, option) }
+                                            .onFailure {
+                                                android.widget.Toast.makeText(
+                                                    context,
+                                                    it.message ?: "投票失败",
+                                                    android.widget.Toast.LENGTH_SHORT
+                                                ).show()
+                                            }
+                                    } finally {
+                                        commandState.endSubmission(item.id)
                                     }
                                 }
                             }

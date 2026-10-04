@@ -735,12 +735,14 @@ fun OfflineVideoPlayerScreen(
                 AndroidView(
                     factory = { ctx ->
                         DanmakuRenderView(ctx).apply {
+                            danmakuManager.isFullscreenSurface = isFullscreen
                             setBackgroundColor(android.graphics.Color.TRANSPARENT)
                             configureAsPassiveDanmakuOverlay()
                             danmakuManager.attachView(this)
                         }
                     },
                     update = { view ->
+                        danmakuManager.isFullscreenSurface = isFullscreen
                         view.visibility = if (showDanmakuLayer) {
                             android.view.View.VISIBLE
                         } else {

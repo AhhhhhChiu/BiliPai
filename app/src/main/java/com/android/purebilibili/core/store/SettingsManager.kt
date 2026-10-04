@@ -391,11 +391,11 @@ enum class PlaybackCompletionBehavior(val value: Int, val label: String) {
 }
 
 enum class PortraitPlayerCollapseMode(val value: Int, val label: String, val description: String) {
-    OFF(0, "关闭", "不自动缩小播放器"),
+    OFF(0, "关闭", "关闭滚动缩小；暂停后仍可上滑评论隐藏视频"),
     INTRO_ONLY(1, "竖屏", "竖屏视频评论区或简介上滑时缩小播放器"),
     COMMENT_ONLY(2, "横屏", "仅横屏视频详情页滚动时缩小播放器"),
     BOTH(3, "全部", "横竖屏视频都使用播放器缩小策略"),
-    PAUSED_ONLY(4, "暂停时", "横竖屏视频暂停后，下滑评论或简介可缩小播放器");
+    PAUSED_ONLY(4, "暂停时", "视频暂停后，上滑评论隐藏视频，上滑简介缩小播放器");
 
     val enablesPortraitVideo: Boolean
         get() = this == INTRO_ONLY || this == BOTH || this == PAUSED_ONLY
