@@ -152,11 +152,13 @@ private fun CommandDanmakuCard(
     isFollowing: Boolean,
     onDismiss: () -> Unit
 ) {
-    val containerWidth = viewport.widthPx
-    val containerHeight = placementHeightPx
     val isVote = item.type == CommandDanmakuType.VOTE && item.voteKind != VoteDanmakuKind.GRADE
     val isGrade = item.type == CommandDanmakuType.VOTE && item.voteKind == VoteDanmakuKind.GRADE
     val isAttention = item.type == CommandDanmakuType.ATTENTION
+    val containerWidth = viewport.widthPx
+    // 官方客户端不对投票卡片做底栏避让：按整个视频视口定位与限高，
+    // 否则卡片被压短后只能内部滚动，选项被截断、状态行也看不见。
+    val containerHeight = if (isVote) viewport.heightPx else placementHeightPx
     val (xRatio, yRatio) = when (item.type) {
         CommandDanmakuType.ATTENTION -> if (item.positionXRatio != null && item.positionYRatio != null) {
             item.positionXRatio to item.positionYRatio
@@ -605,18 +607,21 @@ private fun VoteCommandCard(
     var isLoading by remember(item.id) { mutableStateOf(false) }
     var loadError by remember(item.id) { mutableStateOf<String?>(null) }
     var loadAttempt by remember(item.id) { mutableIntStateOf(0) }
-    LaunchedEffect(item.id, item.voteOptions, loadAttempt) {
-        if (item.voteOptions.isEmpty() && voteId != null) {
-            isLoading = true
-            loadError = null
-            try {
-                DynamicVoteRepository.getVoteInfo(voteId).fold(
-                    onSuccess = { loadedInfo = it },
-                    onFailure = { loadError = it.message ?: "投票选项加载失败" },
-                )
-            } finally {
-                isLoading = false
-            }
+    val selection = state.selection(item.id)
+    val needsResults = selection != null || item.voteSelectedIndex != null
+    LaunchedEffect(item.id, item.voteOptions, loadAttempt, needsResults) {
+        if (voteId == null) return@LaunchedEffect
+        // 选项缺失时取选项；已投票时再取一次实时票数，用于官方客户端式的百分比结果。
+        if (item.voteOptions.isNotEmpty() && !needsResults) return@LaunchedEffect
+        isLoading = true
+        loadError = null
+        try {
+            DynamicVoteRepository.getVoteInfo(voteId).fold(
+                onSuccess = { loadedInfo = it },
+                onFailure = { loadError = it.message ?: "投票选项加载失败" },
+            )
+        } finally {
+            isLoading = false
         }
     }
     val options = remember(item.voteOptions, loadedInfo) {
@@ -631,12 +636,20 @@ private fun VoteCommandCard(
         }
     }
     val selectedIndex = item.voteSelectedIndex ?: loadedInfo?.my_votes?.firstOrNull()?.takeIf { it > 0 }
-    val selection = state.selection(item.id)
     val selectedOptionId = selection?.id ?: selectedIndex?.let { index ->
         options.firstOrNull { it.optionIndex == index }?.id
     }
     val hasVoted = selection != null || selectedIndex != null
     val isSubmitting = state.isSubmitting(item.id)
+    val voteCounts = remember(loadedInfo) {
+        loadedInfo?.options?.associate { it.opt_idx to it.cnt }.orEmpty()
+    }
+    val totalVotes = remember(loadedInfo, voteCounts) {
+        val joined = loadedInfo?.join_num ?: 0
+        if (joined > 0) joined else voteCounts.values.sum()
+    }
+    // 官方客户端只在投票后展示结果，未投票时不显示占比以免影响选择。
+    val showPercent = hasVoted && voteCounts.isNotEmpty() && totalVotes > 0
     val baseTextStyle = MaterialTheme.typography.bodySmall
     val textStyle = remember(baseTextStyle) {
         baseTextStyle.copy(fontSize = 10.sp, lineHeight = 14.sp)
@@ -675,6 +688,13 @@ private fun VoteCommandCard(
                                 textStyle = textStyle,
                                 isSelected = selectedOptionId == option.id,
                                 enabled = !hasVoted && !isSubmitting,
+                                percent = if (showPercent) {
+                                    option.optionIndex?.let { optionIndex ->
+                                        voteCounts[optionIndex]?.let { count ->
+                                            (count * 100f / totalVotes).roundToInt()
+                                        }
+                                    }
+                                } else null,
                                 onClick = {
                                     if (state.beginVoteSubmission(item)) {
                                         onVoteSubmit(item, option, option.optionIndex ?: index + 1)
@@ -691,9 +711,9 @@ private fun VoteCommandCard(
                         else -> AppText("缺少投票 ID，无法加载选项", style = textStyle, color = Color.White.copy(alpha = 0.74f))
                     }
                 }
-                if (hasVoted || isSubmitting) {
+                if (isSubmitting) {
                     AppText(
-                        text = if (hasVoted) "✓ 已投票" else "投票提交中…",
+                        text = "投票提交中…",
                         style = textStyle,
                         color = Color.White.copy(alpha = 0.8f),
                     )
@@ -736,17 +756,21 @@ private fun VoteCommandOption(
     onClick: () -> Unit,
     isSelected: Boolean = false,
     enabled: Boolean = true,
+    percent: Int? = null,
 ) {
+    // 选中项用当前配色的浅色容器（蓝色配色即浅蓝），未选中项保持半透明白。
+    val colors = MaterialTheme.colorScheme
+    val labelColor = if (isSelected) colors.onPrimaryContainer else Color.White
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(4.dp))
             .background(
-                Color.White.copy(alpha = when {
-                    isSelected -> 0.32f
-                    enabled -> 0.22f
-                    else -> 0.14f
-                })
+                if (isSelected) {
+                    colors.primaryContainer
+                } else {
+                    Color.White.copy(alpha = if (enabled) 0.22f else 0.14f)
+                }
             )
             .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
             .semantics { selected = isSelected }
@@ -756,11 +780,20 @@ private fun VoteCommandOption(
         AppText(
             text = label,
             style = textStyle,
-            color = Color.White,
+            color = labelColor,
             fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
         )
+        if (percent != null) {
+            Spacer(modifier = Modifier.width(6.dp))
+            AppText(
+                text = "$percent%",
+                style = textStyle,
+                color = labelColor.copy(alpha = 0.82f),
+            )
+        }
     }
 }
 

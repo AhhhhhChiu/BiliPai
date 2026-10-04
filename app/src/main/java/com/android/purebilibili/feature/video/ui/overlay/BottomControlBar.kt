@@ -735,7 +735,7 @@ fun BottomControlBar(
             currentChapter = currentChapter,
             onChapterClick = onChapterClick,
             modifier = Modifier
-                .padding(horizontal = if (isFullscreen) 48.dp else 0.dp)
+                .padding(horizontal = if (isFullscreen) layoutPolicy.horizontalPaddingDp.dp else 0.dp)
                 .semantics { testTagsAsResourceId = true }
                 .testTag("player_progress")
         )
@@ -762,7 +762,7 @@ fun BottomControlBar(
                     currentPositionMs = progress.current,
                     onSeek = onSeek,
                     modifier = Modifier
-                        .padding(horizontal = if (isFullscreen) 48.dp else 0.dp)
+                        .padding(horizontal = if (isFullscreen) layoutPolicy.horizontalPaddingDp.dp else 0.dp)
                         .testTag("player_viewpoint_segments")
                 )
                 Spacer(modifier = Modifier.height(layoutPolicy.progressSpacingDp.dp))
