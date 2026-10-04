@@ -306,6 +306,26 @@ class PortraitVideoPagerPolicyTest {
     }
 
     @Test
+    fun portraitPlaybackAllowed_inBackgroundWhenBackgroundAudioContinues() {
+        // 「后台播放」开启且策略允许继续播放时，ON_STOP 不应触发暂停
+        assertTrue(
+            shouldAllowPortraitPlayback(
+                isCurrentStoryTab = true,
+                isLifecycleResumed = false,
+                continueInBackgroundAudio = true
+            )
+        )
+        // 离开当前 tab（滑动到别的视频）时即使后台播放开启也不继续
+        assertFalse(
+            shouldAllowPortraitPlayback(
+                isCurrentStoryTab = false,
+                isLifecycleResumed = false,
+                continueInBackgroundAudio = true
+            )
+        )
+    }
+
+    @Test
     fun portraitDanmakuSurface_usesVideoViewportSoDisplayAreaMatchesVideoHeight() {
         assertEquals(
             PortraitDanmakuSurfaceMode.VideoViewport,

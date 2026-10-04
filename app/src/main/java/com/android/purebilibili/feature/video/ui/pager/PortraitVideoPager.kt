@@ -149,6 +149,7 @@ import com.android.purebilibili.data.model.response.RelatedVideo
 import com.android.purebilibili.data.model.response.Stat
 import com.android.purebilibili.data.model.response.UgcSeason
 import com.android.purebilibili.data.model.response.ViewInfo
+import com.android.purebilibili.feature.video.player.MiniPlayerManager
 import com.android.purebilibili.feature.video.player.PlaylistManager
 import com.android.purebilibili.feature.video.danmaku.DanmakuManager
 import com.android.purebilibili.feature.video.danmaku.configureAsPassiveDanmakuOverlay
@@ -755,19 +756,32 @@ fun PortraitVideoPager(
     var isLifecycleResumed by remember(lifecycleOwner) {
         mutableStateOf(lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED))
     }
+    // 「后台播放」豁免：与横屏详情链路（VideoPlayerState.resolvePlaybackPauseDecision）
+    // 共用 MiniPlayerManager.shouldContinueBackgroundAudio 的同一套策略，
+    // 覆盖后台播放开关、退出即停、PiP 与导航离开等条件。
+    var continueInBackgroundAudio by remember(lifecycleOwner) { mutableStateOf(false) }
     val isPortraitPlaybackAllowed = shouldAllowPortraitPlayback(
         isCurrentStoryTab = isActive,
-        isLifecycleResumed = isLifecycleResumed
+        isLifecycleResumed = isLifecycleResumed,
+        continueInBackgroundAudio = continueInBackgroundAudio
     )
     val latestPortraitPlaybackAllowed by rememberUpdatedState(isPortraitPlaybackAllowed)
 
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
-                Lifecycle.Event.ON_RESUME -> isLifecycleResumed = true
+                Lifecycle.Event.ON_RESUME -> {
+                    isLifecycleResumed = true
+                    continueInBackgroundAudio = false
+                }
                 Lifecycle.Event.ON_PAUSE,
                 Lifecycle.Event.ON_STOP,
-                Lifecycle.Event.ON_DESTROY -> isLifecycleResumed = false
+                Lifecycle.Event.ON_DESTROY -> {
+                    val canContinue =
+                        MiniPlayerManager.getInstance(context).shouldContinueBackgroundAudio()
+                    continueInBackgroundAudio = canContinue
+                    if (!canContinue) isLifecycleResumed = false
+                }
                 else -> Unit
             }
         }
@@ -4058,8 +4072,10 @@ internal fun resolvePortraitPagerResizeMode(
 
 internal fun shouldAllowPortraitPlayback(
     isCurrentStoryTab: Boolean,
-    isLifecycleResumed: Boolean
+    isLifecycleResumed: Boolean,
+    continueInBackgroundAudio: Boolean = false
 ): Boolean {
+    if (continueInBackgroundAudio) return isCurrentStoryTab
     return isCurrentStoryTab && isLifecycleResumed
 }
 
