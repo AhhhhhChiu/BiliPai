@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -59,6 +60,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.path
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.contentDescription
@@ -80,6 +82,7 @@ import com.android.purebilibili.feature.video.danmaku.CommandDanmakuType
 import com.android.purebilibili.feature.video.danmaku.VoteDanmakuKind
 import com.android.purebilibili.feature.video.danmaku.VoteOption
 import com.android.purebilibili.feature.video.danmaku.resolveGradeStarOptions
+import com.android.purebilibili.feature.video.danmaku.isActiveAt
 import kotlinx.coroutines.delay
 import java.util.Locale
 import kotlin.math.roundToInt
@@ -96,6 +99,7 @@ internal fun CommandDanmakuOverlay(
     items: List<CommandDanmakuItem>,
     player: Player,
     viewport: DanmakuViewport,
+    bottomInsetPx: Int,
     state: CommandDanmakuOverlayState,
     fontScale: Float,
     onFollowClick: () -> Unit,
@@ -104,6 +108,8 @@ internal fun CommandDanmakuOverlay(
     isFollowing: Boolean = false,
     modifier: Modifier = Modifier
 ) {
+    val placementHeightPx = (viewport.heightPx - bottomInsetPx.coerceAtLeast(0)).coerceAtLeast(0)
+    if (placementHeightPx == 0) return
     val currentPosition by produceState(initialValue = player.currentPosition, key1 = player) {
         while (true) {
             value = player.currentPosition
@@ -112,14 +118,14 @@ internal fun CommandDanmakuOverlay(
     }
     Box(modifier = modifier.fillMaxSize()) {
         val active = items.filter {
-            !state.isDismissed(it.id) &&
-                currentPosition in it.startTimeMs..(it.startTimeMs + it.durationMs)
+            !state.isDismissed(it.id) && it.isActiveAt(currentPosition)
         }
         active.forEach { item ->
             key(item.id) {
                 CommandDanmakuCard(
                     item = item,
                     viewport = viewport,
+                    placementHeightPx = placementHeightPx,
                     state = state,
                     fontScale = fontScale,
                     onFollowClick = onFollowClick,
@@ -137,6 +143,7 @@ internal fun CommandDanmakuOverlay(
 private fun CommandDanmakuCard(
     item: CommandDanmakuItem,
     viewport: DanmakuViewport,
+    placementHeightPx: Int,
     state: CommandDanmakuOverlayState,
     fontScale: Float,
     onFollowClick: () -> Unit,
@@ -146,7 +153,7 @@ private fun CommandDanmakuCard(
     onDismiss: () -> Unit
 ) {
     val containerWidth = viewport.widthPx
-    val containerHeight = viewport.heightPx
+    val containerHeight = placementHeightPx
     val isVote = item.type == CommandDanmakuType.VOTE && item.voteKind != VoteDanmakuKind.GRADE
     val isGrade = item.type == CommandDanmakuType.VOTE && item.voteKind == VoteDanmakuKind.GRADE
     val isAttention = item.type == CommandDanmakuType.ATTENTION
@@ -167,14 +174,11 @@ private fun CommandDanmakuCard(
     }
     val requestedCardWidthPx = when {
         isVote -> {
-            // Match the reference client's compact card proportion within the video viewport.
-            (containerWidth * 0.36f).roundToInt() +
-                with(visualDensity) { VOTE_CLOSE_OVERHANG_DP.dp.roundToPx() }
+            with(visualDensity) { (VOTE_CARD_BODY_WIDTH_DP + VOTE_CLOSE_OVERHANG_DP).dp.roundToPx() }
         }
         isGrade -> {
-            // The grade body occupies half the video width; the close ring sits outside it.
-            (containerWidth * 0.50f).roundToInt() +
-                with(visualDensity) { VOTE_CLOSE_OVERHANG_DP.dp.roundToPx() }
+            // Keep the reference phone card's absolute width when entering fullscreen.
+            with(visualDensity) { (GRADE_CARD_BODY_WIDTH_DP + VOTE_CLOSE_OVERHANG_DP).dp.roundToPx() }
         }
         else -> {
             val requestedCardWidthDp = when (item.type) {
@@ -225,6 +229,10 @@ private fun CommandDanmakuCard(
             .width(cardWidthDp)
             .heightIn(max = with(density) { containerHeight.toDp() })
             .onSizeChanged { measuredCardHeightPx = it.height }
+            // 卡片是交互 UI：点击（含双击）不得穿透到播放器的控件显隐与播放/暂停手势。
+            .pointerInput(item.id) {
+                detectTapGestures(onTap = {})
+            }
     ) {
         // Keep native touch expansion without reserving 48dp layout boxes inside the card.
         CompositionLocalProvider(
@@ -319,6 +327,8 @@ private const val ATTENTION_ACTION_SPACING_DP = 8
 private const val ATTENTION_HORIZONTAL_PADDING_DP = 5
 private val attentionFollowColor = Color(0xFFFB7299)
 private const val VOTE_CLOSE_OVERHANG_DP = 14
+private const val VOTE_CARD_BODY_WIDTH_DP = 130
+private const val GRADE_CARD_BODY_WIDTH_DP = 180
 
 @Composable
 private fun AttentionCommandCard(
@@ -930,6 +940,17 @@ private fun GradeStarRating(
             }
         }
     }
+}
+
+internal fun resolveCommandDanmakuBottomInsetPx(
+    viewportHeightPx: Int,
+    surfaceHeightPx: Int,
+    controlsReserveHeightPx: Int,
+): Int {
+    val viewportHeight = viewportHeightPx.coerceAtLeast(0)
+    val bottomLetterboxHeight = (surfaceHeightPx.coerceAtLeast(viewportHeight) - viewportHeight) / 2
+    return (controlsReserveHeightPx.coerceAtLeast(0) - bottomLetterboxHeight)
+        .coerceIn(0, viewportHeight)
 }
 
 internal fun resolveCommandDanmakuCardWidthPx(

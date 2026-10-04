@@ -4401,6 +4401,7 @@ private fun VideoPlayerSectionContent(
                         )
                     }
                 }
+                val danmakuContainerHeightPx = with(density) { maxHeight.roundToPx() }
                 val danmakuSurfaceModifier = if (useScreenTopDanmakuSurface) {
                     Modifier.fillMaxSize()
                 } else {
@@ -4467,8 +4468,45 @@ private fun VideoPlayerSectionContent(
                     fontWeight = danmakuFontWeight,
                     modifier = Modifier.fillMaxSize()
                 )
+                // Keep the classic controls footprint reserved, including in compact/hidden chrome.
+                val commandControlsLayout = remember(uiLayoutWidthDp) {
+                    com.android.purebilibili.feature.video.ui.overlay.resolveBottomControlBarLayoutPolicy(uiLayoutWidthDp)
+                }
+                val commandProgressLayout = remember(uiLayoutWidthDp) {
+                    com.android.purebilibili.feature.video.ui.overlay.resolveVideoProgressBarLayoutPolicy(uiLayoutWidthDp)
+                }
+                val requestedCommandProgressPlacement by remember(context) {
+                    com.android.purebilibili.core.store.SettingsManager.getPlayerProgressPlacement(context)
+                }.collectAsStateWithLifecycle(
+                    initialValue = com.android.purebilibili.core.store.PlayerProgressPlacement.ABOVE_CONTROLS
+                )
+                val commandProgressPlacement = com.android.purebilibili.feature.video.ui.overlay.resolveVideoDetailProgressPlacement(
+                    requestedPlacement = requestedCommandProgressPlacement,
+                    isFullscreen = isFullscreen,
+                )
+                val commandControlsBottomPaddingDp = com.android.purebilibili.feature.video.ui.overlay.resolveBottomControlBarBottomPaddingDp(
+                    defaultBottomPaddingDp = commandControlsLayout.bottomPaddingDp,
+                    progressPlacement = commandProgressPlacement,
+                )
+                val commandControlsReservePx = with(density) {
+                    (maxOf(
+                        commandControlsLayout.playButtonSizeDp,
+                        commandControlsLayout.danmakuInputHeightDp,
+                        com.android.purebilibili.feature.video.ui.overlay.resolveFullscreenToggleTouchTargetDp(
+                            commandControlsLayout.fullscreenIconSizeDp
+                        ),
+                    ) +
+                        commandProgressLayout.touchContainerHeightDp +
+                        commandControlsLayout.progressSpacingDp +
+                        commandControlsBottomPaddingDp).dp.roundToPx()
+                } + if (isFullscreen) WindowInsets.navigationBarsIgnoringVisibility.getBottom(density) else 0
                 com.android.purebilibili.feature.video.ui.overlay.CommandDanmakuOverlay(
                     viewport = viewport,
+                    bottomInsetPx = com.android.purebilibili.feature.video.ui.overlay.resolveCommandDanmakuBottomInsetPx(
+                        viewportHeightPx = viewport.heightPx,
+                        surfaceHeightPx = danmakuContainerHeightPx,
+                        controlsReserveHeightPx = commandControlsReservePx,
+                    ),
                     state = commandState,
                     fontScale = danmakuFontScale,
                     items = visibleCommandDanmakuList,

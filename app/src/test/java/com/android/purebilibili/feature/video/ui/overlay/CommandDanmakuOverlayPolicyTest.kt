@@ -94,4 +94,33 @@ class CommandDanmakuOverlayPolicyTest {
         assertEquals(0, resolveAttentionCommandOffsetPx(0, 120, 0.5f, 12))
         assertEquals(100, resolveAttentionCommandOffsetPx(320, 120, Float.NaN, 12))
     }
+
+    @Test
+    fun `bottom right command stays above the permanently reserved control region`() {
+        val inset = resolveCommandDanmakuBottomInsetPx(
+            viewportHeightPx = 320,
+            surfaceHeightPx = 320,
+            controlsReserveHeightPx = 96,
+        )
+        val placementHeight = 320 - inset
+        val y = resolveAttentionCommandOffsetPx(placementHeight, 28, 1f, 12)
+
+        assertEquals(96, inset)
+        assertEquals(184, y)
+        assertEquals(212, y + 28)
+    }
+
+    @Test
+    fun `letterboxing only excludes controls that actually intersect the video viewport`() {
+        assertEquals(0, resolveCommandDanmakuBottomInsetPx(600, 1200, 180))
+        assertEquals(70, resolveCommandDanmakuBottomInsetPx(900, 1000, 120))
+        assertEquals(120, resolveCommandDanmakuBottomInsetPx(900, 900, 120))
+    }
+
+    @Test
+    fun `reserved controls cannot create a negative or oversized placement region`() {
+        assertEquals(320, resolveCommandDanmakuBottomInsetPx(320, 320, 500))
+        assertEquals(0, resolveCommandDanmakuBottomInsetPx(320, 320, -1))
+        assertEquals(0, resolveCommandDanmakuBottomInsetPx(0, 320, 96))
+    }
 }

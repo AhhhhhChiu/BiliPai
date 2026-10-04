@@ -4309,6 +4309,10 @@ internal fun VideoDetailScreenStateHolder(
                                 player.pause()
                                 player.playWhenReady = false
                                 autoPausedByPlayerCollapse = true
+                                com.android.purebilibili.core.util.Logger.d(
+                                    "VideoDetailScreen",
+                                    "⏸️ 折叠播放器自动暂停 bvid=$currentBvid"
+                                )
                             } else if (
                                 shouldAutoResumeOnPlayerExpand(
                                     autoPauseEnabled = pauseOnPlayerCollapseEnabled,
@@ -4319,6 +4323,10 @@ internal fun VideoDetailScreenStateHolder(
                             ) {
                                 autoPausedByPlayerCollapse = false
                                 player.play()
+                                com.android.purebilibili.core.util.Logger.d(
+                                    "VideoDetailScreen",
+                                    "▶️ 折叠播放器展开后自动继续播放 bvid=$currentBvid"
+                                )
                             } else if (!playerCollapsedForAutoPause) {
                                 autoPausedByPlayerCollapse = false
                             }

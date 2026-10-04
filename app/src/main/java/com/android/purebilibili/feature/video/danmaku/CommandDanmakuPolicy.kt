@@ -86,10 +86,13 @@ data class CommandDanmakuItem(
     val positionYRatio: Float? = null
 )
 
+internal fun CommandDanmakuItem.isActiveAt(positionMs: Long): Boolean =
+    positionMs >= startTimeMs && positionMs - startTimeMs < durationMs
+
 internal const val COMMAND_DANMAKU_OVERLAY_DURATION_MS = 3000L
 private const val LEGACY_ADVANCED_COMMAND_DURATION_MS = 5000L
 
-// 投票弹幕需要更长的展示时间供用户点选
+// 服务端未提供有效时长时，给投票和评分保留点选时间。
 internal const val VOTE_DANMAKU_OVERLAY_DURATION_MS = 8000L
 
 private val NON_VISUAL_COMMAND_TYPES = setOf(
@@ -169,7 +172,7 @@ internal fun buildCommandDanmakuItem(cmd: DanmakuProto.CommandDm): CommandDanmak
                     if (voteKind == VoteDanmakuKind.GRADE) "打分" else "互动投票"
                 },
                 startTimeMs = cmd.progress.coerceAtLeast(0).toLong(),
-                durationMs = VOTE_DANMAKU_OVERLAY_DURATION_MS,
+                durationMs = voteData.durationMs,
                 voteKind = voteKind,
                 voteId = voteData.voteId,
                 voteTitle = voteData.title,
@@ -235,7 +238,8 @@ private data class VoteDanmakuPayload(
     val title: String,
     val options: List<VoteOption>,
     val gradeSummary: GradeDanmakuSummary?,
-    val selectedIndex: Int?
+    val selectedIndex: Int?,
+    val durationMs: Long
 )
 
 private fun resolveVoteKind(commandType: String): VoteDanmakuKind {
@@ -309,7 +313,9 @@ private fun parseVoteDanmakuData(
             payloadJson?.optInt("my_vote", 0)?.takeIf { it > 0 }
         } else {
             null
-        }
+        },
+        durationMs = payloadJson?.optLong("duration", 0L)?.takeIf { it > 0L }
+            ?: VOTE_DANMAKU_OVERLAY_DURATION_MS
     )
 }
 
