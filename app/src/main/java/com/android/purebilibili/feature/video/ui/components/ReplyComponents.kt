@@ -66,6 +66,7 @@ import coil3.transform.Transformation
 import coil3.imageLoader
 //  已改用 MaterialTheme.colorScheme.primary
 import com.android.purebilibili.core.store.SettingsManager
+import com.android.purebilibili.core.ui.LocalDetailedCommentTimeEnabled
 import com.android.purebilibili.core.theme.calculateContrastRatio
 import com.android.purebilibili.core.util.FormatUtils
 import com.android.purebilibili.core.util.Logger
@@ -1177,7 +1178,8 @@ internal fun resolveReplyPreviewTextContent(
     item: ReplyItem,
     isLiked: Boolean = item.action == 1,
     onLikeClick: (() -> Unit)? = null,
-    onReplyClick: (() -> Unit)? = null
+    onReplyClick: (() -> Unit)? = null,
+    detailedTimeEnabled: Boolean = false
 ): ImagePreviewTextContent {
     val originalSizeLabels = item.content.pictures.orEmpty().map { picture ->
         resolveCommentImageOriginalSizeLabel(picture.imgSize.takeIf { it > 0f })
@@ -1190,9 +1192,9 @@ internal fun resolveReplyPreviewTextContent(
             replyId = item.rpid,
             authorName = item.member.uname,
             avatarUrl = item.member.avatar,
-            timeText = FormatUtils.formatPrecisePublishTime(
+            timeText = FormatUtils.formatCommentTime(
                 timestampSeconds = item.ctime,
-                pattern = "yyyy-MM-dd HH:mm:ss"
+                detailedTimeEnabled = detailedTimeEnabled
             ),
             body = item.content.message,
             originalSizeLabels = originalSizeLabels,
@@ -1263,6 +1265,7 @@ fun ReplyItemView(
 ) {
     val appearance = rememberVideoCommentAppearance()
     val context = LocalContext.current
+    val detailedCommentTimeEnabled = LocalDetailedCommentTimeEnabled.current
     val scope = rememberCoroutineScope()
     val isUpComment = upMid > 0 && item.mid == upMid
     val showResolvedIdentityDecorations = shouldShowReplyIdentityDecorations(showIdentityDecorations)
@@ -1287,14 +1290,12 @@ fun ReplyItemView(
     val displayLocation = remember(location) {
         resolveReplyLocationText(location)
     }
-    //  [PiliPlus 对齐] 一级评论固定显示绝对时间 yyyy-MM-dd HH:mm:ss，不随
-    //  详细时间开关变化；开关只作用于楼中楼/动态等相对时间表面。
-    val metadataText = remember(item.ctime, displayLocation) {
+    val metadataText = remember(item.ctime, displayLocation, detailedCommentTimeEnabled) {
         buildString {
             append(
-                FormatUtils.formatPrecisePublishTime(
+                FormatUtils.formatCommentTime(
                     timestampSeconds = item.ctime,
-                    pattern = "yyyy-MM-dd HH:mm:ss"
+                    detailedTimeEnabled = detailedCommentTimeEnabled
                 )
             )
             if (!displayLocation.isNullOrEmpty()) {
@@ -1580,7 +1581,6 @@ fun ReplyItemView(
                 .fillMaxWidth()
                 .padding(
                     top = 10.dp,
-                    bottom = 10.dp,
                     start = layoutPolicy.horizontalPaddingDp.dp,
                     end = layoutPolicy.horizontalPaddingDp.dp
                 )
@@ -1750,6 +1750,7 @@ fun ReplyItemView(
                                         isLiked = isLiked,
                                         onLikeClick = onLikeClick,
                                         onReplyClick = onReplyClick,
+                                        detailedTimeEnabled = detailedCommentTimeEnabled
                                     )
                                 )
                             }
@@ -1852,28 +1853,32 @@ fun ReplyItemView(
                     }
 
                     Spacer(modifier = Modifier.width(8.dp))
-                    AppIconButton(
-                        onClick = { onHateClick?.invoke() },
-                        enabled = onHateClick != null
-                    ) {
-                        AppIcon(
-                            imageVector = Icons.Filled.ThumbDown,
-                            contentDescription = if (isHated) "取消点踩" else "点踩评论",
-                            tint = if (isHated) MaterialTheme.colorScheme.error else appearance.actionTint,
-                            modifier = Modifier.size(16.dp)
-                        )
+                    Box(modifier = Modifier.height(32.dp)) {
+                        AppIconButton(
+                            onClick = { onHateClick?.invoke() },
+                            enabled = onHateClick != null
+                        ) {
+                            AppIcon(
+                                imageVector = Icons.Filled.ThumbDown,
+                                contentDescription = if (isHated) "取消点踩" else "点踩评论",
+                                tint = if (isHated) MaterialTheme.colorScheme.error else appearance.actionTint,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
                     }
 
                     // [新增] 删除按钮 (仅显示给本人)
                     if (onDeleteClick != null) {
                         Spacer(modifier = Modifier.width(16.dp))
-                        AppIconButton(onClick = onDeleteClick) {
-                            AppIcon(
-                                imageVector = Icons.Outlined.Delete,
-                                contentDescription = "删除",
-                                tint = appearance.actionTint,
-                                modifier = Modifier.size(16.dp),
-                            )
+                        Box(modifier = Modifier.height(32.dp)) {
+                            AppIconButton(onClick = onDeleteClick) {
+                                AppIcon(
+                                    imageVector = Icons.Outlined.Delete,
+                                    contentDescription = "删除",
+                                    tint = appearance.actionTint,
+                                    modifier = Modifier.size(16.dp),
+                                )
+                            }
                         }
                     }
                 }
@@ -2894,9 +2899,9 @@ internal fun ReplyActionSheet(
                                 Toast.makeText(
                                     sheetContext,
                                     if (next) {
-                                        "已切换为绝对时间：楼中楼与动态评论将显示 yyyy-MM-dd HH:mm:ss"
+                                        "已切换为绝对时间：评论显示 yyyy-MM-dd HH:mm:ss"
                                     } else {
-                                        "已切换为相对时间（默认）：一级评论保持精确时间，楼中楼/动态按相对显示"
+                                        "已切换为相对时间：评论按相对时间显示"
                                     },
                                     Toast.LENGTH_LONG
                                 ).show()

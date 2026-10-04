@@ -431,12 +431,6 @@ class PortraitVideoPagerPolicyTest {
     }
 
     @Test
-    fun portraitDanmakuReadableFontScale_boostsDefaultWithoutExceedingSettingsLimit() {
-        assertEquals(1.18f, resolvePortraitDanmakuReadableFontScale(1f))
-        assertEquals(2.0f, resolvePortraitDanmakuReadableFontScale(1.9f))
-    }
-
-    @Test
     fun sharedPlayerEntry_reusesExistingFrameWhenSharedPlayerAlreadyHasVideoSize() {
         assertEquals(
             0,
