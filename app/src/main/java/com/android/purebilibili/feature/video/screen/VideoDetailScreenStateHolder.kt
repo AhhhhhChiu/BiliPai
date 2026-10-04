@@ -4234,9 +4234,15 @@ internal fun VideoDetailScreenStateHolder(
                             stateName = "video_detail:player_swipe_collapse",
                             isActive = collapseMotionSignalActive,
                         )
-                        val isPlayerCollapsed by remember(inlinePortraitScrollEnabled, collapseRangePx) {
+                        // 暂停隐藏播放器时视口高度为 0，但折叠位移不会走完全程；
+                        // 顶部 chrome（渐进模糊/纯色底）需要按"已折叠"处理，否则评论区顶栏透明。
+                        val isPlayerCollapsed by remember(
+                            inlinePortraitScrollEnabled,
+                            collapseRangePx,
+                            hidePausedPlayerForComments,
+                        ) {
                             derivedStateOf {
-                                resolveIsPlayerCollapsed(
+                                hidePausedPlayerForComments || resolveIsPlayerCollapsed(
                                     swipeHidePlayerEnabled = inlinePortraitScrollEnabled,
                                     playerHeightOffsetPx = inlinePlayerCollapseState.offsetPx,
                                     videoHeightPx = collapseRangePx
