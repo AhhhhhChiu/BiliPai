@@ -45,9 +45,14 @@ object DanmakuParser {
         
         var totalParsed = 0
         var serverDisabled = false
+        var failedSegmentCount = 0
         for ((index, segment) in segments.withIndex()) {
             try {
                 val reply = DanmakuProto.parseReply(segment)
+                if (reply.parseFailed) {
+                    failedSegmentCount++
+                    continue
+                }
                 val elems = reply.elems
                 if (reply.state == 1) {
                     serverDisabled = true
@@ -58,6 +63,7 @@ object DanmakuParser {
                     totalParsed += appendElement(elem, standardList, advancedList, basList)
                 }
             } catch (e: Exception) {
+                failedSegmentCount++
                 Log.e(TAG, " Failed to parse segment ${index + 1}: ${e.message}")
             }
         }
@@ -77,7 +83,13 @@ object DanmakuParser {
             Log.w(TAG, " No danmakus parsed from Protobuf!")
         }
         
-        return ParsedDanmaku(standardList, advancedList, serverDisabled, basList)
+        return ParsedDanmaku(
+            standardList = standardList,
+            advancedList = advancedList,
+            serverDisabled = serverDisabled,
+            basList = basList,
+            failedSegmentCount = failedSegmentCount
+        )
     }
 
     /** Parse an already decoded element without copying its protobuf content again. */

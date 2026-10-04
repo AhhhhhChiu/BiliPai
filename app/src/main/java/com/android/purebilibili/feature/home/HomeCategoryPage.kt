@@ -41,8 +41,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -451,6 +454,7 @@ internal fun HomeCategoryPageContent(
             when (displayMode) {
                 1 -> StoryVideoCard(
                     video = video,
+                    modifier = if (showFullVideoCardContent) Modifier else Modifier.fillMaxHeight(),
                     index = index,
                     animationEnabled = cardAnimationEnabled,
                     motionTier = cardMotionTier,
@@ -493,6 +497,7 @@ internal fun HomeCategoryPageContent(
 
                 else -> ElegantVideoCard(
                     video = video,
+                    modifier = if (showFullVideoCardContent) Modifier else Modifier.fillMaxHeight(),
                     index = index,
                     isFollowing = video.owner.mid in followingMids && category != HomeCategory.FOLLOW,
                     animationEnabled = cardAnimationEnabled,
@@ -721,8 +726,8 @@ internal fun HomeCategoryPageContent(
                         }
                     }
                 } else {
-                    // Truncated cards advance as complete rows. Metadata remains unabridged, but
-                    // a long timestamp can no longer pull only its own lane out of alignment.
+                    // Keep both the card shells and subsequent rows aligned while retaining
+                    // unabridged metadata. The tallest card determines each row's height.
                     resolveHomeFeedAlignedRows(
                         itemCount = visibleGridVideos.size,
                         columns = gridColumns,
@@ -746,25 +751,53 @@ internal fun HomeCategoryPageContent(
                             contentType = "home_video_row",
                             span = StaggeredGridItemSpan.FullLine,
                         ) {
-                            Row(
-                                modifier = videoListItemModifier(enabled = cardAnimationEnabled && !cardReflowActive)
-                                    .fillMaxWidth(),
-                                horizontalArrangement = horizontalArrangement,
-                                verticalAlignment = Alignment.Top,
-                            ) {
-                                rowIndices.forEach { index ->
-                                    key(videoGridKeys[index]) {
-                                        Box(modifier = Modifier.weight(1f)) {
-                                            renderVideoCard(
-                                                index,
-                                                visibleGridVideos[index],
-                                                Modifier.fillMaxWidth(),
-                                            )
+                            BoxWithConstraints(Modifier.fillMaxWidth()) {
+                                // The same videos can survive rotation or sidebar resizing. Their
+                                // previous row height is valid only for the same measured width.
+                                val rowDensity = LocalDensity.current
+                                val rowHeightPx = remember(
+                                    rowKey, constraints.maxWidth, rowDensity.density,
+                                    rowDensity.fontScale, cardLayout,
+                                ) { mutableIntStateOf(0) }
+                                Row(
+                                    modifier = videoListItemModifier(enabled = cardAnimationEnabled && !cardReflowActive)
+                                        .fillMaxWidth(),
+                                    horizontalArrangement = horizontalArrangement,
+                                    verticalAlignment = Alignment.Top,
+                                ) {
+                                    rowIndices.forEach { index ->
+                                        key(videoGridKeys[index]) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .weight(1f)
+                                                    .layout { measurable, incoming ->
+                                                        val minimumHeight = rowHeightPx.intValue.coerceIn(
+                                                            incoming.minHeight, incoming.maxHeight,
+                                                        )
+                                                        val placeable = measurable.measure(
+                                                            incoming.copy(minHeight = minimumHeight),
+                                                        )
+                                                        layout(placeable.width, placeable.height) {
+                                                            placeable.placeRelative(0, 0)
+                                                        }
+                                                    }
+                                                    .onSizeChanged { size ->
+                                                        if (size.height > rowHeightPx.intValue) {
+                                                            rowHeightPx.intValue = size.height
+                                                        }
+                                                    },
+                                            ) {
+                                                renderVideoCard(
+                                                    index,
+                                                    visibleGridVideos[index],
+                                                    Modifier.fillMaxWidth().fillMaxHeight(),
+                                                )
+                                            }
                                         }
                                     }
-                                }
-                                repeat(gridColumns - rowIndices.count()) {
-                                    Spacer(modifier = Modifier.weight(1f))
+                                    repeat(gridColumns - rowIndices.count()) {
+                                        Spacer(modifier = Modifier.weight(1f))
+                                    }
                                 }
                             }
                         }

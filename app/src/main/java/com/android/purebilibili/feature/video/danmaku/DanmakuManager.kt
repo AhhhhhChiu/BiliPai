@@ -93,6 +93,7 @@ class DanmakuManager private constructor(
         private const val WEB_MASK_REFRESH_GUARD_MS = 5_000L
         private const val SPECIAL_LOOK_AHEAD_MS = 3_000L
         private const val SPECIAL_REFRESH_GUARD_MS = 1_500L
+        private const val SEGMENT_RETRY_INTERVAL_MS = 15_000L
 
         internal fun createSession(context: Context, scope: CoroutineScope): DanmakuManager {
             return DanmakuManager(context.applicationContext, scope)
@@ -117,8 +118,10 @@ class DanmakuManager private constructor(
     private var loadGeneration: Long = 0L
     private var windowLoadJob: Job? = null
     private var windowGeneration: Long = 0L
+    private var missingSegmentRetryAtMs: Long = 0L
     private var maskLoadJob: Job? = null
     private var maskFetchJob: Job? = null
+    private var configRebuildJob: Job? = null
     private var syncJob: Job? = null  // ⚙️ [漂移修复] 定期检测漂移
     
     // 弹幕状态
@@ -383,27 +386,23 @@ class DanmakuManager private constructor(
 
                 val expectedCid = cachedCid
                 val expectedGeneration = loadGeneration
+                val expectedWindowGeneration = windowGeneration
 
-                cacheUpdateMutex.withLock {
-                    val rebuild = withContext(Dispatchers.Default) {
-                        buildDanmakuCacheFromSource(
-                            expectedCid = expectedCid,
-                            expectedGeneration = expectedGeneration
-                        )
-                    }
-                    if (rebuild == null) return@collect
+                val rebuild = withContext(Dispatchers.Default) {
+                    buildDanmakuCacheFromSource(
+                        expectedCid = expectedCid,
+                        expectedGeneration = expectedGeneration,
+                        expectedWindowGeneration = expectedWindowGeneration
+                    )
+                }
+                if (rebuild == null) return@collect
 
-                    withContext(Dispatchers.Main.immediate) {
-                        if (!shouldApplyDanmakuLoadResult(
-                                expectedCid = expectedCid,
-                                expectedGeneration = expectedGeneration,
-                                currentCid = cachedCid,
-                                currentGeneration = loadGeneration
-                            ) || !commitDanmakuCacheRebuild(rebuild, "plugin_update")
-                        ) {
-                            return@withContext
-                        }
-                        applyCachedDanmakuToController("plugin_update")
+                withContext(Dispatchers.Main.immediate) {
+                    if (!isCurrentSegmentWindowRequest(
+                            expectedCid, expectedGeneration, expectedWindowGeneration
+                        ) || !commitDanmakuCacheRebuild(rebuild, "plugin_update")
+                    ) {
+                        return@withContext
                     }
                 }
             }
@@ -471,7 +470,7 @@ class DanmakuManager private constructor(
             retainedMergedAdvanced = visibleMergedAdvanced
             mergedStandard to (filteredAdvancedList + visibleMergedAdvanced)
         } else {
-            filteredStandardList to filteredAdvancedList
+            projectedStandardList to filteredAdvancedList
         }
 
         if (!isCurrentLoadRequest()) return null
@@ -500,7 +499,8 @@ class DanmakuManager private constructor(
         requestSpecialDanmakuWindow(player?.currentPosition ?: 0L, "data_ready")
         if (rebuild.visibleStandard.isEmpty() && rebuild.visibleAdvanced.isEmpty() && rebuild.visibleBas.isEmpty()) {
             Log.w(TAG, " Danmaku cache rebuilt ($reason): no visible items after filtering")
-            return false
+            // An empty filtered window is a valid result and must replace the old timeline.
+            return true
         }
         Log.w(
             TAG,
@@ -558,7 +558,7 @@ class DanmakuManager private constructor(
         previousController: DanmakuEngine?,
         reason: String,
     ) {
-        val list = cachedDanmakuList?.takeIf { it.isNotEmpty() } ?: return
+        val list = cachedDanmakuList ?: return
         val current = controller ?: return
         if (
             !shouldReapplyDanmakuTimelineOnAttach(
@@ -628,9 +628,11 @@ class DanmakuManager private constructor(
         }
         if (shouldPlay && config.isEnabled) {
             isPlaying = true
+            if (syncJob?.isActive != true) startDriftSync()
         } else {
             ctrl.pause()
             isPlaying = false
+            stopDriftSync()
         }
         timelineSyncedController = ctrl
         pendingTimelineResync = false
@@ -645,6 +647,18 @@ class DanmakuManager private constructor(
     ) {
         if (isSeekScrubbing) return
         val ctrl = controller ?: return
+        if (timelineSyncedController !== ctrl || pendingTimelineResync) {
+            cachedDanmakuList?.let { list ->
+                resyncDanmakuTimeline(
+                    list = list,
+                    positionMs = positionMs,
+                    shouldPlay = shouldPlay,
+                    invalidateView = invalidateView,
+                    reason = "$reason:restore_timeline"
+                )
+            }
+            return
+        }
         val safePositionMs = positionMs.coerceAtLeast(0L)
         applyPlaybackSpeedToController(ctrl)
         ctrl.synchronizeTo(safePositionMs)
@@ -1100,6 +1114,7 @@ class DanmakuManager private constructor(
                 config.weightFilterLevel != weightFilterLevel ||
                 blockedRulesChanged
         val occlusionChanged = config.smartOcclusionEnabled != smartOcclusion
+        val staticToScrollChanged = config.staticDanmakuToScroll != staticDanmakuToScroll
         
         config.opacity = opacity
         config.fontScale = fontScale
@@ -1157,6 +1172,10 @@ class DanmakuManager private constructor(
                     }
                 }
             } else {
+                maskLoadJob?.cancel()
+                maskFetchJob?.cancel()
+                webMaskWindowStartMs = Long.MIN_VALUE
+                webMaskWindowEndMs = Long.MIN_VALUE
                 currentFaceAwareBand = null
                 config.safeBandTopRatio = 0f
                 config.safeBandBottomRatio = 1f
@@ -1165,10 +1184,11 @@ class DanmakuManager private constructor(
             }
         }
         
-        if (mergeChanged || filterChanged || occlusionChanged) {
+        if (mergeChanged || filterChanged || staticToScrollChanged) {
             val reason = if (mergeChanged) "merge_changed" else "filter_changed"
-            val resolvedReason = if (occlusionChanged) "smart_occlusion_toggle" else reason
-            applyConfigToController(resolvedReason)
+            applyConfigToController(reason)
+        } else if (occlusionChanged) {
+            applyConfigToController("smart_occlusion_toggle")
         } else {
             applyConfigToController("batch")
         }
@@ -1180,7 +1200,9 @@ class DanmakuManager private constructor(
         val height = heightPx.coerceAtLeast(0f)
         if (config.hotBarReservedHeightPx == height) return
         config.hotBarReservedHeightPx = height
-        applyConfigToController("hot_bar_space")
+        // Massive mode overlays the count bar without changing the engine's layout.
+        // Retain the requested height for a later switch back to normal mode.
+        if (!config.massiveMode) applyConfigToController("hot_bar_space")
     }
 
     /**
@@ -1228,32 +1250,35 @@ class DanmakuManager private constructor(
             // 正则屏蔽在整表扫描上非常重，禁止在主线程同步 rebuild（ANR）。
             if (reason == "merge_changed" || reason == "filter_changed" || reason == "staticDanmakuToScroll") {
                 val rebuildReason = reason
-                scope.launch {
-                    cacheUpdateMutex.withLock {
-                        val expectedCid = cachedCid
-                        val expectedGeneration = loadGeneration
-                        val rebuild = withContext(Dispatchers.Default) {
-                            buildDanmakuCacheFromSource(
-                                expectedCid = expectedCid,
-                                expectedGeneration = expectedGeneration
-                            )
-                        } ?: return@launch
-                        if (!shouldApplyDanmakuLoadResult(expectedCid, expectedGeneration, cachedCid, loadGeneration) ||
-                            !commitDanmakuCacheRebuild(rebuild, rebuildReason)
-                        ) return@launch
-                        val list = cachedDanmakuList ?: return@launch
-                        val currentPos = player?.currentPosition ?: 0L
-                        Log.w(TAG, " Re-applying danmaku data after $rebuildReason change at ${currentPos}ms")
-                        resyncDanmakuTimeline(
-                            list = list,
-                            positionMs = currentPos,
-                            shouldPlay = shouldStartDanmakuOnDataReady(
-                                isPlaying = player?.isPlaying == true,
-                                playWhenReady = player?.playWhenReady == true
-                            ),
-                            reason = "config:$rebuildReason"
+                val expectedCid = cachedCid
+                val expectedGeneration = loadGeneration
+                val expectedWindowGeneration = windowGeneration
+                configRebuildJob?.cancel()
+                configRebuildJob = scope.launch {
+                    val rebuild = withContext(Dispatchers.Default) {
+                        buildDanmakuCacheFromSource(
+                            expectedCid = expectedCid,
+                            expectedGeneration = expectedGeneration,
+                            expectedWindowGeneration = expectedWindowGeneration
                         )
-                    }
+                    } ?: return@launch
+                    if (!isCurrentSegmentWindowRequest(
+                            expectedCid, expectedGeneration, expectedWindowGeneration
+                        )
+                    ) return@launch
+                    if (!commitDanmakuCacheRebuild(rebuild, rebuildReason)) return@launch
+                    val list = cachedDanmakuList ?: return@launch
+                    val currentPos = player?.currentPosition ?: 0L
+                    Log.w(TAG, " Re-applying danmaku data after $rebuildReason change at ${currentPos}ms")
+                    resyncDanmakuTimeline(
+                        list = list,
+                        positionMs = currentPos,
+                        shouldPlay = shouldStartDanmakuOnDataReady(
+                            isPlaying = player?.isPlaying == true,
+                            playWhenReady = player?.playWhenReady == true
+                        ),
+                        reason = "config:$rebuildReason"
+                    )
                 }
             } else {
                 ctrl.invalidate()
@@ -1815,22 +1840,21 @@ class DanmakuManager private constructor(
         
         // 如果是同一个 cid 且已有缓存数据，直接使用（横竖屏切换场景）
         if (cid == cachedCid && cachedDanmakuList != null) {
-            val currentPos = player?.currentPosition ?: 0L
-            Log.w(TAG, " Using cached danmaku list (${cachedDanmakuList!!.size} items) for cid=$cid, position=${currentPos}ms")
-
-            //  [修复] 显式重同步要先 pause 再 start，避免引擎在播放中忽略 start()
-            resyncDanmakuTimeline(
-                list = cachedDanmakuList!!,
-                positionMs = currentPos,
-                shouldPlay = player?.isPlaying == true,
+            // Lifecycle changes can repeat this request for the same playback identity.
+            // Only a replacement/unsynced controller needs the cached window replayed.
+            reapplyCachedDanmakuToCurrentControllerIfNeeded(
+                previousController = controller,
                 reason = "load_cached"
             )
-            Log.w(TAG, " Cached data: setData(0) + start(${currentPos}ms)")
             return
         }
         
         // 需要从网络加载新 cid 的弹幕
         Log.w(TAG, " loadDanmaku: New cid=$cid, loading from network")
+        configRebuildJob?.cancel()
+        windowLoadJob?.cancel()
+        stopDriftSync()
+        isPlaying = false
         isLoading = true
         isSeekScrubbing = false
         cachedCid = cid
@@ -1847,6 +1871,7 @@ class DanmakuManager private constructor(
         sourceBasDanmakuList = null
         sourceCommandDanmakuList = emptyList()
         parsedSegments.clear()
+        missingSegmentRetryAtMs = 0L
         activeSegmentIndices = emptyList()
         pendingSegmentIndices = emptyList()
         clearSpecialDanmakuWindow()
@@ -1884,6 +1909,9 @@ class DanmakuManager private constructor(
                 val viewReply = if (aid > 0) {
                      com.android.purebilibili.data.repository.DanmakuRepository.getDanmakuView(cid, aid)
                 } else null
+                if (!isCurrentSegmentWindowRequest(cid, requestGeneration, requestWindowGeneration)) {
+                    return@launch
+                }
                 totalSegmentCount = com.android.purebilibili.data.repository.resolveDanmakuSegmentCount(
                     durationMs = durationMs,
                     metadataSegmentCount = viewReply?.dmSge?.total?.toInt()
@@ -1936,16 +1964,27 @@ class DanmakuManager private constructor(
     ) {
         val requestedSegments = segmentWindowForPosition(positionMs, totalSegmentCount)
         val anchorSegment = segmentIndexForPosition(positionMs).coerceIn(1, totalSegmentCount)
+        val anchorWasCached = anchorSegment in parsedSegments
         val anchorParsed = parsedSegments[anchorSegment] ?: loadParsedSegment(cid, anchorSegment)
-            ?: if (allowXmlFallback) loadXmlFallback(cid) else null
+        val xmlFallback = if (anchorParsed == null && allowXmlFallback) loadXmlFallback(cid) else null
 
         if (!isCurrentSegmentWindowRequest(cid, requestGeneration, requestWindowGeneration)) return
         if (anchorParsed != null) parsedSegments[anchorSegment] = anchorParsed
+        if (xmlFallback != null) {
+            // Never put a whole-video XML list into one protobuf segment: neighbors would
+            // duplicate it, and rolling that window forward would discard future comments.
+            requestedSegments.forEach { index ->
+                if (index !in parsedSegments) {
+                    parsedSegments[index] = sliceDanmakuFallbackSegment(xmlFallback, index)
+                }
+            }
+        }
         val neighborIndices = requestedSegments.filter { it != anchorSegment && it !in parsedSegments }
         // During normal forward playback, keep the existing renderer timeline alive until the
         // complete next window is available. Applying the cached anchor first used to clear and
         // restart the renderer twice at every six-minute boundary (most visibly around 18 min).
-        if (reason != "playback_progress") {
+        val applyOnlyWhenComplete = reason == "playback_progress" || reason == "segment_retry"
+        if (!applyOnlyWhenComplete) {
             applyParsedSegmentWindow(
                 cid = cid,
                 positionMs = positionMs,
@@ -1964,10 +2003,18 @@ class DanmakuManager private constructor(
 
         if (!isCurrentSegmentWindowRequest(cid, requestGeneration, requestWindowGeneration)) return
         neighborResults.forEach { (index, parsed) ->
-            parsedSegments[index] = parsed ?: ParsedDanmaku(emptyList(), emptyList())
+            // A failed fetch must remain missing; a successfully parsed empty segment is valid.
+            if (parsed != null) parsedSegments[index] = parsed
         }
         parsedSegments.keys.retainAll(requestedSegments.toSet())
-        if (reason != "playback_progress" && neighborIndices.isEmpty()) return
+        missingSegmentRetryAtMs = if (requestedSegments.any { it !in parsedSegments }) {
+            SystemClock.elapsedRealtime() + SEGMENT_RETRY_INTERVAL_MS
+        } else 0L
+        if (reason == "segment_retry" && (anchorWasCached || anchorParsed == null) &&
+            neighborResults.none { (_, parsed) -> parsed != null }
+        ) return
+        // Eager callers already applied the cached window above; nothing new arrived.
+        if (!applyOnlyWhenComplete && neighborIndices.isEmpty()) return
         applyParsedSegmentWindow(
             cid = cid,
             positionMs = positionMs,
@@ -1979,8 +2026,9 @@ class DanmakuManager private constructor(
     }
 
     private suspend fun loadParsedSegment(cid: Long, segmentIndex: Int): ParsedDanmaku? {
+        val localSource = isLocalSegmentSession
         val localPath = localSegmentPaths.getOrNull(segmentIndex - 1)
-        val bytes = if (isLocalSegmentSession) {
+        val bytes = if (localSource) {
             if (localPath == null) return null
             try {
                 withContext(Dispatchers.IO) {
@@ -1998,6 +2046,13 @@ class DanmakuManager private constructor(
         } ?: return null
         return withContext(Dispatchers.Default) {
             val parsed = DanmakuParser.parseProtobuf(listOf(bytes))
+            if (parsed.failedSegmentCount > 0) {
+                if (!localSource) {
+                    com.android.purebilibili.data.repository.DanmakuContentRepository
+                        .invalidateDanmakuSegment(cid, segmentIndex)
+                }
+                return@withContext null
+            }
             if (parsed.serverDisabled) {
                 com.android.purebilibili.data.repository.DanmakuRepository
                     .markDanmakuServerDisabled(cid)
@@ -2047,6 +2102,17 @@ class DanmakuManager private constructor(
                 if (!isCurrentSegmentWindowRequest(cid, requestGeneration, requestWindowGeneration)) {
                     return@withContext
                 }
+                val currentPositionMs = resolveDanmakuDataReadyPositionMs(
+                    currentPlayerPositionMs = player?.currentPosition,
+                    requestedPositionMs = positionMs,
+                )
+                val currentAnchor = segmentIndexForPosition(currentPositionMs).coerceIn(1, totalSegmentCount)
+                if (currentAnchor !in requestedSegments) {
+                    // Weak-network loads can finish after a seek or several segment boundaries.
+                    // Keep the displayed window and fetch the one the player now needs.
+                    requestSegmentWindow(currentPositionMs, "stale_window_recovery")
+                    return@withContext
+                }
                 isLoading = false
                 activeSegmentIndices = requestedSegments
                 if (rebuild == null || !commitDanmakuCacheRebuild(rebuild, reason)) {
@@ -2058,10 +2124,6 @@ class DanmakuManager private constructor(
                     pendingTimelineResync = true
                     return@withContext
                 }
-                val currentPositionMs = resolveDanmakuDataReadyPositionMs(
-                    currentPlayerPositionMs = player?.currentPosition,
-                    requestedPositionMs = positionMs,
-                )
                 val currentController = controller
                 if (
                     reason == "playback_progress" &&
@@ -2117,6 +2179,10 @@ class DanmakuManager private constructor(
 
     private fun requestSegmentWindow(positionMs: Long, reason: String) {
         cancelObsoleteWindowRequest(positionMs)
+        val requestedSegments = segmentWindowForPosition(positionMs, totalSegmentCount)
+        val hasMissingSegments = !isLocalSegmentSession && loadJob?.isActive != true &&
+            SystemClock.elapsedRealtime() >= missingSegmentRetryAtMs &&
+            activeSegmentIndices.any { it in requestedSegments && it !in parsedSegments }
         if (
             cachedCid <= 0L ||
             !shouldRequestDanmakuWindow(
@@ -2124,16 +2190,20 @@ class DanmakuManager private constructor(
                 pendingSegments = pendingSegmentIndices,
                 requestInFlight = windowLoadJob?.isActive == true,
                 positionMs = positionMs,
-                totalSegments = totalSegmentCount
+                totalSegments = totalSegmentCount,
+                hasMissingSegments = hasMissingSegments
             )
         ) {
             return
         }
         windowLoadJob?.cancel()
-        pendingSegmentIndices = segmentWindowForPosition(positionMs, totalSegmentCount)
+        pendingSegmentIndices = requestedSegments
         val requestCid = cachedCid
         val requestGeneration = loadGeneration
         val requestWindowGeneration = ++windowGeneration
+        val loadReason = if (hasMissingSegments && reason == "playback_progress") {
+            "segment_retry"
+        } else reason
         windowLoadJob = scope.launch {
             try {
                 loadAndApplySegmentWindow(
@@ -2142,7 +2212,7 @@ class DanmakuManager private constructor(
                     requestGeneration = requestGeneration,
                     requestWindowGeneration = requestWindowGeneration,
                     allowXmlFallback = false,
-                    reason = reason
+                    reason = loadReason
                 )
                 requestWebMaskWindow(
                     positionMs = positionMs,
@@ -2154,6 +2224,9 @@ class DanmakuManager private constructor(
                 throw e
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to replace danmaku segment window", e)
+                if (isCurrentSegmentWindowRequest(requestCid, requestGeneration, requestWindowGeneration)) {
+                    missingSegmentRetryAtMs = SystemClock.elapsedRealtime() + SEGMENT_RETRY_INTERVAL_MS
+                }
             } finally {
                 if (requestWindowGeneration == windowGeneration) {
                     pendingSegmentIndices = emptyList()
@@ -2354,8 +2427,13 @@ class DanmakuManager private constructor(
                     windowEndMs = windowEndMs
                 )
             }
-            if (!isCurrentSegmentWindowRequest(expectedCid, requestGeneration, requestWindowGeneration)) return@launch
-            controller?.replaceMaskFrames(frames, positionMs)
+            if (!isCurrentSegmentWindowRequest(expectedCid, requestGeneration, requestWindowGeneration) ||
+                !config.smartOcclusionEnabled || isSeekScrubbing
+            ) return@launch
+            controller?.replaceMaskFrames(
+                frames,
+                resolveDanmakuDataReadyPositionMs(player?.currentPosition, positionMs)
+            )
         }
     }
 
@@ -2370,9 +2448,24 @@ class DanmakuManager private constructor(
         Log.w(TAG, "========== loadLocalDanmaku CALLED cid=$cid, segments=${standardSegmentPaths.size} ==========")
         loadJob?.cancel()
         windowLoadJob?.cancel()
+        configRebuildJob?.cancel()
+        maskLoadJob?.cancel()
+        maskFetchJob?.cancel()
+        stopDriftSync()
+        isPlaying = false
         isLoading = true
         isSeekScrubbing = false
         cachedCid = cid
+        cachedAid = 0L
+        cachedBvid = ""
+        cachedDurationMs = 0L
+        webMaskBytes = null
+        webMaskFps = 0
+        webMaskWindowStartMs = Long.MIN_VALUE
+        webMaskWindowEndMs = Long.MIN_VALUE
+        timelineSyncedController = null
+        pendingTimelineResync = false
+        controller?.replaceMaskFrames(emptyList(), 0L)
         sessionIdentity = sessionIdentity?.copy(cid = cid)
         localSegmentPaths = standardSegmentPaths.toList()
         isLocalSegmentSession = true
@@ -2389,6 +2482,7 @@ class DanmakuManager private constructor(
         _basDanmakuFlow.value = emptyList()
         _commandDanmakuFlow.value = emptyList()
         parsedSegments.clear()
+        missingSegmentRetryAtMs = 0L
         activeSegmentIndices = emptyList()
         pendingSegmentIndices = emptyList()
         clearSpecialDanmakuWindow()
@@ -2397,6 +2491,7 @@ class DanmakuManager private constructor(
 
         loadJob = scope.launch {
             try {
+
                 loadAndApplySegmentWindow(
                     cid = cid,
                     positionMs = player?.currentPosition ?: 0L,
@@ -2420,7 +2515,13 @@ class DanmakuManager private constructor(
     
     fun show() {
         Log.d(TAG, "👁️ show()")
+        val alreadyVisible = danmakuView?.visibility == android.view.View.VISIBLE
         danmakuView?.visibility = android.view.View.VISIBLE
+        // Host/settings recomposition may request show again. A live, synced surface
+        // already owns its timeline; restarting it would clear all on-screen comments.
+        if (alreadyVisible && controller != null && timelineSyncedController === controller &&
+            !pendingTimelineResync && !isSeekScrubbing
+        ) return
 
         // [修复] 相关推荐/同页切集后弹幕开关开启却无弹幕：Enable→show() 常在弹幕数据
         // 就绪前执行，若此时还要求 player.isPlaying 瞬时成立才装填时间线，数据就绪后
@@ -2428,7 +2529,7 @@ class DanmakuManager private constructor(
         // 被 None 分支吃掉），只能靠手动重开弹幕开关触发 show() 才恢复。
         // 改为「数据就绪即装填时间线」，shouldPlay 仍按实际播放状态决定 start/pause；
         // 之后 onIsPlayingChanged(true) 会走 SoftResync 完成最终时钟校准。
-        cachedDanmakuList?.takeIf { it.isNotEmpty() }?.let { list ->
+        cachedDanmakuList?.let { list ->
             resyncDanmakuTimeline(
                 list = list,
                 positionMs = player?.currentPosition ?: 0L,
@@ -2448,6 +2549,7 @@ class DanmakuManager private constructor(
         controller?.clear()
         danmakuView?.visibility = android.view.View.GONE
         isPlaying = false
+        stopDriftSync()
     }
     
     /**
@@ -2469,6 +2571,9 @@ class DanmakuManager private constructor(
         windowLoadJob?.cancel()
         maskLoadJob?.cancel()
         maskFetchJob?.cancel()
+        configRebuildJob?.cancel()
+        stopDriftSync()
+        isPlaying = false
         isLoading = false
         loadGeneration++
         cachedCid = 0L
@@ -2476,6 +2581,7 @@ class DanmakuManager private constructor(
         cachedBvid = ""
         cachedDurationMs = 0L
         parsedSegments.clear()
+        missingSegmentRetryAtMs = 0L
         activeSegmentIndices = emptyList()
         pendingSegmentIndices = emptyList()
         clearSpecialDanmakuWindow()
@@ -2496,7 +2602,7 @@ class DanmakuManager private constructor(
         timelineSyncedController = null
         pendingTimelineResync = false
         clearExplicitSeekResyncMarker()
-        controller?.clear()
+        controller?.stop()
     }
 
     /**
@@ -2506,6 +2612,9 @@ class DanmakuManager private constructor(
     fun prepareForSeekScrub() {
         if (isSeekScrubbing) return
         isSeekScrubbing = true
+        maskLoadJob?.cancel()
+        webMaskWindowStartMs = Long.MIN_VALUE
+        webMaskWindowEndMs = Long.MIN_VALUE
         val ctrl = controller ?: return
         executeDanmakuSeekScrubStart(
             pause = {
@@ -2587,7 +2696,12 @@ class DanmakuManager private constructor(
         }
     }
 
-    fun recoverAfterForeground(positionMs: Long, playWhenReady: Boolean, playbackState: Int) {
+    fun recoverAfterForeground(
+        positionMs: Long,
+        playWhenReady: Boolean,
+        playbackState: Int,
+        preserveTimeline: Boolean = false
+    ) {
         specialLoadingPausedForBackground = false
         requestSpecialDanmakuWindow(positionMs, "foreground_recovery")
         when (
@@ -2596,7 +2710,10 @@ class DanmakuManager private constructor(
                 isPlayerPlaying = player?.isPlaying == true,
                 playbackState = playbackState,
                 danmakuEnabled = config.isEnabled,
-                hasData = cachedDanmakuList != null
+                hasData = cachedDanmakuList != null,
+                preserveTimeline = preserveTimeline,
+                timelineAlreadySynced = controller != null && timelineSyncedController === controller &&
+                    !pendingTimelineResync
             )
         ) {
             DanmakuSyncAction.HardResync -> {
@@ -2616,8 +2733,17 @@ class DanmakuManager private constructor(
                 stopDriftSync()
                 Log.w(TAG, "🌅 Danmaku foreground recovery kept paused at end state")
             }
-            DanmakuSyncAction.None,
-            DanmakuSyncAction.SoftResync -> Unit
+            DanmakuSyncAction.SoftResync -> {
+                if (isSeekScrubbing) return
+                danmakuView?.visibility = android.view.View.VISIBLE
+                softResyncDanmakuTimeline(
+                    positionMs = positionMs,
+                    shouldPlay = playWhenReady || player?.isPlaying == true,
+                    reason = "host_transition_recovery"
+                )
+                if (isPlaying) startDriftSync()
+            }
+            DanmakuSyncAction.None -> Unit
         }
     }
     
@@ -2704,15 +2830,22 @@ class DanmakuManager private constructor(
         sourceDanmakuList = (sourceDanmakuList ?: emptyList()).plus(danmakuData).sortedBy { it.showAtTime }
         Log.d(TAG, "📝 Added to cache and sorted, total: ${cachedDanmakuList?.size} danmakus")
         
-        // 立即显示（通过重新设置数据并跳到当前位置）
-        cachedDanmakuList?.let { list ->
-            Log.d(TAG, "📝 Calling setData with ${list.size} items")
+        val ctrl = controller
+        if (isSeekScrubbing) {
+            pendingTimelineResync = true
+        } else if (ctrl != null && timelineSyncedController === ctrl && !pendingTimelineResync) {
+            // Append only this new item to the sorted timeline. Keep active render
+            // layers, playback state and clock intact for ordinary/send-same comments.
+            ctrl.append(visibleLocalDanmaku)
+            ctrl.invalidate()
+        } else cachedDanmakuList?.let { list ->
+            // First data/late attachment still needs an initial timeline installation.
             resyncDanmakuTimeline(
                 list = list,
                 positionMs = currentPosition,
                 shouldPlay = player?.isPlaying == true,
                 invalidateView = true,
-                reason = "add_local"
+                reason = "initialize_local"
             )
         }
         
@@ -2756,6 +2889,10 @@ class DanmakuManager private constructor(
         maskLoadJob = null
         maskFetchJob?.cancel()
         maskFetchJob = null
+        configRebuildJob?.cancel()
+        configRebuildJob = null
+        timelineSyncedController = null
+        pendingTimelineResync = false
         
         // 🎬 [根本修复] 停止帧级同步
         stopDriftSync()
@@ -2772,6 +2909,9 @@ class DanmakuManager private constructor(
         specialLoadingPausedForBackground = true
         windowLoadJob?.cancel()
         windowLoadJob = null
+        ++windowGeneration
+        pendingSegmentIndices = emptyList()
+        configRebuildJob?.cancel()
         ++specialWindowGeneration
         specialWindowLoadJob?.cancel()
         specialWindowLoadJob = null
@@ -2786,11 +2926,17 @@ class DanmakuManager private constructor(
         if (window != null) scope.launch { specialWindowMutex.withLock { window.clearPrograms() } }
         maskLoadJob?.cancel()
         maskLoadJob = null
+        webMaskWindowStartMs = Long.MIN_VALUE
+        webMaskWindowEndMs = Long.MIN_VALUE
         maskFetchJob?.cancel()
         maskFetchJob = null
         rawDanmakuList = null
         controller?.pause()
         controller?.clear()
+        // A trimmed renderer no longer owns the visible timeline. Foreground recovery
+        // must replay it even when a host otherwise requests a lightweight clock sync.
+        timelineSyncedController = null
+        pendingTimelineResync = cachedDanmakuList != null
         stopDriftSync()
         isPlaying = false
     }
@@ -2855,6 +3001,7 @@ class DanmakuManager private constructor(
         cachedBvid = ""
         cachedDurationMs = 0L
         parsedSegments.clear()
+        missingSegmentRetryAtMs = 0L
         activeSegmentIndices = emptyList()
         pendingSegmentIndices = emptyList()
         clearSpecialDanmakuWindow()

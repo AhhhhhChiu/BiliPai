@@ -177,5 +177,6 @@ data class ParsedDanmaku(
     val standardList: List<com.android.purebilibili.danmaku.engine.DanmakuItem>,
     val advancedList: List<AdvancedDanmakuData>,
     val serverDisabled: Boolean = false,
-    val basList: List<BasDanmaku> = emptyList()
+    val basList: List<BasDanmaku> = emptyList(),
+    val failedSegmentCount: Int = 0
 )

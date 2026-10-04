@@ -686,6 +686,7 @@ fun VideoPlayerOverlay(
     val drawerHazeState = state.drawerHazeState
     val statusBarAmbientFrame = state.statusBarAmbientFrame
     val statusBarBackdropHeight = state.statusBarBackdropHeight
+    val ambientVideoBoundsInWindow = state.ambientVideoBoundsInWindow
     val onShowDanmakuPool = actions.onShowDanmakuPool
 
     var showQualityMenu by remember { mutableStateOf(false) }
@@ -1321,6 +1322,7 @@ fun VideoPlayerOverlay(
                 ambientFrame = statusBarAmbientFrame,
                 height = statusBarBackdropHeight,
                 useAmbientHaze = immersiveVideoPageStatusBar,
+                videoBoundsInWindow = ambientVideoBoundsInWindow,
                 modifier = Modifier.align(Alignment.TopCenter),
             )
         }
