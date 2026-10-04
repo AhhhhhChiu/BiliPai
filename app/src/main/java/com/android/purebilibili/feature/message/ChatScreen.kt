@@ -100,6 +100,15 @@ import kotlinx.serialization.json.jsonPrimitive
 import java.text.SimpleDateFormat
 import java.util.*
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.repeatOnLifecycle
+import com.android.purebilibili.feature.common.ListLoadError
+import com.android.purebilibili.core.ui.AdaptiveLoadingIndicator
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import com.android.purebilibili.core.ui.AppShapes
 import com.android.purebilibili.core.ui.ContainerLevel
 import com.android.purebilibili.core.ui.MediaContrastPalette
@@ -146,7 +155,31 @@ fun ChatScreen(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     var inputText by rememberSaveable(talkerId, sessionType) { mutableStateOf("") }
+    LaunchedEffect(viewModel, uiState.sentText) {
+        val sentText = uiState.sentText ?: return@LaunchedEffect
+        if (inputText == sentText) inputText = ""
+        viewModel.consumeSentText(sentText)
+    }
     val listState = rememberLazyListState()
+    val scrollScope = rememberCoroutineScope()
+    var followLatest by rememberSaveable(talkerId, sessionType) { mutableStateOf(true) }
+    var handledScrollVersion by remember(viewModel) { mutableStateOf(uiState.scrollToLatestVersion) }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    LaunchedEffect(viewModel, lifecycleOwner) {
+        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            while (isActive) {
+                viewModel.refreshMessages()
+                delay(5_000L)
+            }
+        }
+    }
+    LaunchedEffect(listState) {
+        snapshotFlow { listState.isScrollInProgress to listState.canScrollBackward }
+            .collect { (scrolling, canScrollToNewer) ->
+                // Data insertion must not change the user's intention to follow the latest message.
+                if (scrolling || !canScrollToNewer) followLatest = !canScrollToNewer
+            }
+    }
     var pendingWithdrawMessage by remember { mutableStateOf<PrivateMessageItem?>(null) }
     var showInterceptConfirm by remember { mutableStateOf(false) }
     val context = LocalContext.current
@@ -158,11 +191,14 @@ fun ChatScreen(
         }
     }
     
-    // 滚动到底部
-    LaunchedEffect(uiState.messages.size) {
-        if (uiState.messages.isNotEmpty()) {
-            listState.animateScrollToItem(uiState.messages.size - 1)
+    val latestMessageKey = uiState.messages.lastOrNull()?.let(::chatMessageKey)
+    LaunchedEffect(latestMessageKey, uiState.scrollToLatestVersion) {
+        val sentMessage = uiState.scrollToLatestVersion > handledScrollVersion
+        if (uiState.messages.isNotEmpty() && (followLatest || sentMessage)) {
+            followLatest = true
+            listState.scrollToItem(0)
         }
+        handledScrollVersion = uiState.scrollToLatestVersion
     }
 
     val chatThemeConfig = LocalAppThemeConfig.current
@@ -278,7 +314,7 @@ fun ChatScreen(
                                 modifier = Modifier.align(Alignment.Center)
                             )
                         }
-                        uiState.error != null -> {
+                        uiState.error != null && uiState.messages.isEmpty() -> {
                             Column(
                                 modifier = Modifier.align(Alignment.Center),
                                 horizontalAlignment = Alignment.CenterHorizontally
@@ -290,6 +326,13 @@ fun ChatScreen(
                                 }
                             }
                         }
+                        uiState.refreshError != null && uiState.messages.isEmpty() -> {
+                            ListLoadError(
+                                message = uiState.refreshError ?: "刷新消息失败",
+                                onRetry = { viewModel.loadMessages() },
+                                modifier = Modifier.align(Alignment.Center).padding(16.dp),
+                            )
+                        }
                         uiState.messages.isEmpty() -> {
                             AppText(
                                 text = "暂无消息",
@@ -300,6 +343,7 @@ fun ChatScreen(
                         else -> {
                             LazyColumn(
                                 state = listState,
+                                reverseLayout = true,
                                 modifier = Modifier.fillMaxSize(),
                                 contentPadding = PaddingValues(
                                     start = 16.dp,
@@ -308,30 +352,20 @@ fun ChatScreen(
                                     bottom = CHAT_MESSAGE_LIST_BOTTOM_PADDING +
                                         miniPlayerBottomAvoidance,
                                 ),
-                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                                verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.Bottom)
                             ) {
-                                // 加载更多按钮
-                                if (uiState.hasMore) {
-                                    item {
-                                        Box(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            if (uiState.isLoadingMore) {
-                                                com.android.purebilibili.core.ui.CutePersonLoadingIndicator(
-                                                    size = 24.dp
-                                                )
-                                            } else {
-                                                AppTextButton(onClick = { viewModel.loadMoreMessages() }) {
-                                                    AppText("加载更多")
-                                                }
-                                            }
-                                        }
+                                uiState.refreshError?.let { error ->
+                                    item(key = "message_refresh_error") {
+                                        ListLoadError(
+                                            message = error,
+                                            onRetry = { viewModel.loadMessages() },
+                                            modifier = Modifier.fillMaxWidth().padding(8.dp),
+                                        )
                                     }
                                 }
                                 items(
-                                    items = uiState.messages,
-                                    key = { it.msg_key }
+                                    items = uiState.messages.asReversed(),
+                                    key = ::chatMessageKey,
                                 ) { message ->
                                     MessageBubble(
                                         message = message,
@@ -350,7 +384,47 @@ fun ChatScreen(
                                         }
                                     )
                                 }
+                                // Reverse layout keeps older pages above the current reading position.
+                                if (uiState.hasMore) {
+                                    item(key = "load_older_messages") {
+                                        Box(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            if (uiState.isLoadingMore) {
+                                                AdaptiveLoadingIndicator(
+                                                    size = 24.dp
+                                                )
+                                            } else if (uiState.loadMoreError != null) {
+                                                ListLoadError(
+                                                    message = uiState.loadMoreError ?: "加载历史消息失败",
+                                                    onRetry = viewModel::loadMoreMessages,
+                                                    modifier = Modifier.fillMaxWidth().padding(8.dp),
+                                                )
+                                            } else {
+                                                AppTextButton(onClick = { viewModel.loadMoreMessages() }) {
+                                                    AppText("加载更多")
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
                             }
+                        }
+                    }
+
+                    if (!followLatest && uiState.messages.isNotEmpty()) {
+                        AppButton(
+                            onClick = {
+                                followLatest = true
+                                scrollScope.launch { listState.scrollToItem(0) }
+                            },
+                            modifier = Modifier.align(Alignment.BottomEnd).padding(
+                                end = 16.dp,
+                                bottom = CHAT_MESSAGE_LIST_BOTTOM_PADDING + miniPlayerBottomAvoidance,
+                            ),
+                        ) {
+                            AppText("回到最新消息")
                         }
                     }
 
@@ -378,9 +452,8 @@ fun ChatScreen(
                     text = inputText,
                     onTextChange = { inputText = it },
                     onSend = {
-                        if (inputText.isNotBlank()) {
+                        if (inputText.isNotBlank() && !uiState.isSending && !uiState.isUploadingImage) {
                             viewModel.sendMessage(inputText)
-                            inputText = ""
                         }
                     },
                     onPickImage = {

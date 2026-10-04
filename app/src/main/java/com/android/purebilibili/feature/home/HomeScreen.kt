@@ -2412,13 +2412,15 @@ fun HomeScreen(
                                      ModernErrorState(
                                          message = categoryError,
                                          isVisible = pagerState.currentPage == page,
-                                         onRetry = { viewModel.refresh() }
+                                         onRetry = { viewModel.refresh(category) }
                                      )
                                  }
                                  } else {
                                  // Data Content
                                  // [性能优化] Stabilize event callbacks to prevent recomposition on scroll
-                                 val onLoadMoreCallback = remember(viewModel) { { viewModel.loadMore() } }
+                                 val onLoadMoreCallback = remember(viewModel, category, popularSubCategory) {
+                                     { viewModel.loadMore(category, popularSubCategory) }
+                                 }
                                  val onWatchLaterCallback = remember(viewModel) { { bvid: String, aid: Long -> viewModel.addToWatchLater(bvid, aid) } }
                                   val onLongPressCallback = remember(
                                       targetVideoItemState,
@@ -2463,6 +2465,7 @@ fun HomeScreen(
                                  HomeCategoryPageContent(
                                      category = category,
                                      categoryState = pageCategoryState,
+                                     isActive = pagerState.currentPage == page,
                                      gridState = contentGridState,
                                      gridColumns = effectiveGridColumns,
                                      contentPadding = pageContentPadding,
@@ -2475,6 +2478,10 @@ fun HomeScreen(
                                      onLiveClick = onLiveClickCallback,
                                      onOpenLiveHome = onLiveListClick,
                                      onLoadMore = onPageLoadMore,
+                                     onRetryLoadMore = {
+                                         viewModel.loadMore(category, selectedPopularSubCategory, retry = true)
+                                     },
+                                     onRetryRefresh = { viewModel.refresh(category, selectedPopularSubCategory) },
                                      onDismissVideo = onDismissVideoCallback,
                                      onWatchLater = onWatchLaterCallback,
                                      onDissolveComplete = onDissolveCompleteCallback,

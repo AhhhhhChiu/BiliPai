@@ -2026,7 +2026,7 @@ open class MainActivity : AppCompatActivity() {
                                     )
                                 } else {
                                     Image(
-                                        painter = androidx.compose.ui.res.painterResource(R.drawable.bilipai_maid_static),
+                                        painter = androidx.compose.ui.res.painterResource(com.android.bilipai.brandmotion.R.drawable.bilipai_maid_static),
                                         contentDescription = "蓝雪女仆",
                                         modifier = Modifier.size(maidStartupSize)
                                     )

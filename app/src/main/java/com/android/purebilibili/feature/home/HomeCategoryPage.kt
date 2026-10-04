@@ -72,6 +72,7 @@ import top.yukonga.miuix.kmp.blur.rememberLayerBackdrop
 import com.android.purebilibili.feature.home.components.cards.ElegantVideoCard
 import com.android.purebilibili.feature.home.components.cards.LocalHomeScrollTickProvider
 import com.android.purebilibili.feature.home.components.cards.StoryVideoCard
+import com.android.purebilibili.feature.common.ListLoadError
 
 import androidx.compose.ui.Alignment
 import coil3.compose.AsyncImage
@@ -181,6 +182,7 @@ internal fun shouldRequestHomeCategoryLoadMore(
 internal fun HomeCategoryPageContent(
     category: HomeCategory,
     categoryState: CategoryContent,
+    isActive: Boolean,
     gridState: LazyStaggeredGridState,
     gridColumns: Int,
     contentPadding: PaddingValues,
@@ -194,6 +196,8 @@ internal fun HomeCategoryPageContent(
     /** 顶栏直播已统一到 LiveList；首页内嵌直播分类仅作跳转入口。 */
     onOpenLiveHome: () -> Unit = {},
     onLoadMore: () -> Unit,
+    onRetryLoadMore: () -> Unit,
+    onRetryRefresh: () -> Unit,
     onDismissVideo: (VideoItem) -> Unit,
     onWatchLater: (String, Long) -> Unit,
     onDissolveComplete: (String) -> Unit,
@@ -300,26 +304,30 @@ internal fun HomeCategoryPageContent(
     }
 
     // Check for load more
-    val shouldLoadMore by remember {
+    val latestCategoryState by rememberUpdatedState(categoryState)
+    val latestIsActive by rememberUpdatedState(isActive)
+    val latestOnLoadMore by rememberUpdatedState(onLoadMore)
+    val shouldLoadMore by remember(gridState) {
         derivedStateOf {
             val layoutInfo = gridState.layoutInfo
             val totalItems = layoutInfo.totalItemsCount
             // Staggered lanes do not guarantee that the last visible entry has the greatest
             // adapter index. Use the maximum across lanes so pagination cannot stall.
             val lastVisibleItemIndex = layoutInfo.visibleItemsInfo.maxOfOrNull { it.index } ?: 0
-            shouldRequestHomeCategoryLoadMore(
+            val current = latestCategoryState
+            latestIsActive && current.loadMoreError == null && shouldRequestHomeCategoryLoadMore(
                 totalItems = totalItems,
                 lastVisibleItemIndex = lastVisibleItemIndex,
-                isLoading = categoryState.isLoading,
-                hasMore = categoryState.hasMore,
-                hasVisibleContent = categoryState.videos.isNotEmpty() ||
-                    categoryState.liveRooms.isNotEmpty() ||
-                    categoryState.followedLiveRooms.isNotEmpty()
+                isLoading = current.isLoading,
+                hasMore = current.hasMore,
+                hasVisibleContent = current.videos.isNotEmpty() ||
+                    current.liveRooms.isNotEmpty() ||
+                    current.followedLiveRooms.isNotEmpty()
             )
         }
     }
     LaunchedEffect(shouldLoadMore) {
-        if (shouldLoadMore) onLoadMore()
+        if (shouldLoadMore) latestOnLoadMore()
     }
 
     val carouselVideos = remember(category, categoryState.videos) {
@@ -567,6 +575,15 @@ internal fun HomeCategoryPageContent(
                 verticalItemSpacing = cardLayout.verticalItemSpacingDp.dp,
                 modifier = Modifier.fillMaxSize()
             ) {
+        categoryState.refreshError?.let { message ->
+            item(key = "refresh_error", span = StaggeredGridItemSpan.FullLine) {
+                ListLoadError(
+                    message = "刷新失败，已保留现有内容：$message",
+                    onRetry = onRetryRefresh,
+                    modifier = Modifier.fillMaxWidth().padding(AppSpacingTokens.Medium),
+                )
+            }
+        }
         if (category == HomeCategory.LIVE) {
             // 顶栏/侧滑偶发进入内嵌直播页时，引导到与底栏一致的 LiveList 首页。
             item(span = StaggeredGridItemSpan.FullLine) {
@@ -807,8 +824,17 @@ internal fun HomeCategoryPageContent(
         }
 
         // Loading Indicator at bottom
-        if (categoryState.isLoading || categoryState.hasMore) {
-             item(span = StaggeredGridItemSpan.FullLine) {
+        val loadMoreError = categoryState.loadMoreError
+        if (loadMoreError != null) {
+            item(key = "load_more_error", span = StaggeredGridItemSpan.FullLine) {
+                ListLoadError(
+                    message = "加载更多失败：$loadMoreError",
+                    onRetry = onRetryLoadMore,
+                    modifier = Modifier.fillMaxWidth().padding(AppSpacingTokens.Medium),
+                )
+            }
+        } else if (categoryState.isLoading || categoryState.hasMore) {
+             item(key = "load_more_status", span = StaggeredGridItemSpan.FullLine) {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()

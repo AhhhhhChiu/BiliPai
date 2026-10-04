@@ -6,8 +6,8 @@ from pathlib import Path
 
 ART = Path(__file__).resolve().parent
 ROOT = ART.parents[1]
-RAW = ROOT / 'app/src/main/res/raw'
-DRAWABLE = ROOT / 'app/src/main/res/drawable-nodpi'
+RAW = ROOT / 'brand-motion/src/main/res/raw'
+DRAWABLE = ROOT / 'brand-motion/src/main/res/drawable-nodpi'
 FALLBACKS = {
     'welcome': 'bilipai_maid_static',
     'clean_complete': 'bilipai_maid_clean_static',

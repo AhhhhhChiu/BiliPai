@@ -1880,11 +1880,6 @@ internal fun VideoDetailScreenStateHolder(
         onDispose { rotationResolver.unregisterContentObserver(observer) }
     }
     val sensorAutoRotateEnabled = autoRotateEnabled && systemAutoRotateEnabled
-    val cardAnimationEnabled by com.android.purebilibili.core.store.SettingsManager
-        .getCardAnimationEnabled(context).collectAsStateWithLifecycle(
-            initialValue = true,
-            lifecycle = lifecycleOwner.lifecycle
-        )
 
     DisposableEffect(Unit) {
         //  [沉浸式] 启用边到边显示，让内容延伸到状态栏下方
@@ -1980,7 +1975,8 @@ internal fun VideoDetailScreenStateHolder(
         com.android.purebilibili.core.store.SettingsManager.getMiniPlayerModeSync(context)
             .supportsSystemPip
     }
-    val isReducedActionMotion = !cardAnimationEnabled
+    // Card entrance motion is independent of action feedback (and defaults off).
+    val isReducedActionMotion = com.android.purebilibili.core.ui.motion.rememberSystemReduceMotion()
 
     VideoDetailPipParamsEffect(
         context = context,

@@ -21,7 +21,7 @@ def check_keyframes(value, end):
 pose_bitmaps = set()
 ROOT = Path(__file__).resolve().parents[2]
 for name,frames in [('welcome',60),('clean_complete',72),('cleaning',96),('retry',90),('empty',108),('search_empty',120),('favorite_saved',72),('follow_success',72),('unfollow_complete',60),('dislike_confirmed',60),('share_ready',72),('coin_success',72),('download_complete',72),('triple_success',108)]:
-    path=ROOT/'app/src/main/res/raw'/f'bilipai_maid_{name}.json'
+    path=ROOT/'brand-motion/src/main/res/raw'/f'bilipai_maid_{name}.json'
     data=json.loads(path.read_text())
     assert data['op']==frames and data['fr']==60
     assert data['w']==512 and data['h']==512
@@ -63,7 +63,7 @@ for name,frames in [('welcome',60),('clean_complete',72),('cleaning',96),('retry
                              'dislike_confirmed':'bilipai_maid_dislike_static','share_ready':'bilipai_maid_share_static','coin_success':'bilipai_maid_coin_static',
                              'follow_success':'bilipai_maid_follow_static','unfollow_complete':'bilipai_maid_unfollow_static','triple_success':'bilipai_maid_triple_static'}[name]
             assert asset['p'] == fallback_name+'.png', 'Animation must reference its matching static fallback'
-            decoded = (ROOT/'app/src/main/res/drawable-nodpi'/asset['p']).read_bytes()
+            decoded = (ROOT/'brand-motion/src/main/res/drawable-nodpi'/asset['p']).read_bytes()
             image=Image.open(io.BytesIO(decoded)); image.load()
             assert image.size==(asset['w'],asset['h']) and image.mode=='RGBA'
             assert image.getpixel((0,0))[3]==0
@@ -85,15 +85,15 @@ for name,frames in [('welcome',60),('clean_complete',72),('cleaning',96),('retry
                 assert mask['mode'] in ('a','s')
     print(f'{name}: {frames/60:g}s, {len(data["layers"])} layers, local PNG and references valid')
 for name in ['bilipai_maid_static','bilipai_maid_clean_static','bilipai_maid_retry_static','bilipai_maid_empty_static','bilipai_maid_search_empty_static','bilipai_maid_favorite_static','bilipai_maid_download_static','bilipai_maid_triple_static']:
-    assert (ROOT/'app/src/main/res/drawable-nodpi'/f'{name}.png').exists()
+    assert (ROOT/'brand-motion/src/main/res/drawable-nodpi'/f'{name}.png').exists()
 preview=(Path(__file__).parent/'preview.html').read_text()
 assert '__ANIMATIONS__' not in preview
 assert 'https://' not in preview
 assert (Path(__file__).parent/'lottie.min.js').is_file()
 assert (Path(__file__).parent/'LOTTIE-WEB-LICENSE.md').is_file()
-player=(ROOT/'app/src/main/java/com/android/purebilibili/core/ui/BlueSnowMaidAnimation.kt').read_text()
+player=(ROOT/'brand-motion/src/main/java/com/android/purebilibili/core/ui/BlueSnowMaidAnimation.kt').read_text()
 for state,resource,duration,fallback in re.findall(r'(\w+)\(R.raw.(\w+), (\d+)L, R.drawable.(\w+)',player):
-    timeline=json.loads((ROOT/'app/src/main/res/raw'/f'{resource}.json').read_text())
+    timeline=json.loads((ROOT/'brand-motion/src/main/res/raw'/f'{resource}.json').read_text())
     assert (timeline['op']-timeline['ip'])/timeline['fr']*1000==int(duration), f'{state}: resource/player duration mismatch'
     assert next(a['p'] for a in timeline['assets'] if 'p' in a)==fallback+'.png', f'{state}: resource/player shared image mismatch'
 print('All enum playback durations match their resources.')

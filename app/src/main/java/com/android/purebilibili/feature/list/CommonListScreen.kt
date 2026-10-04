@@ -3,6 +3,7 @@ package com.android.purebilibili.feature.list
 import com.android.purebilibili.navigation.animatePagerSelection
 import com.android.purebilibili.core.ui.components.videoListItemModifier
 import com.android.purebilibili.feature.home.GridPinchColumnHudPill
+import com.android.purebilibili.feature.common.ListLoadError
 import com.android.purebilibili.feature.home.homeFeedPinchZoom
 import com.android.purebilibili.feature.home.resolveHomeFeedPinchColumnBounds
 import com.android.purebilibili.core.ui.components.AnimatedVideoListItem
@@ -390,6 +391,8 @@ fun CommonListScreen(
         historyViewModel,
         historyContentFilter,
         state.isLoading,
+        state.error,
+        state.loadMoreError,
         state.items.size,
         visibleHistoryItems.size,
         historyHasMore,
@@ -398,6 +401,8 @@ fun CommonListScreen(
         if (
             historyViewModel != null &&
             !state.isLoading &&
+            state.error == null &&
+            state.loadMoreError == null &&
             shouldLoadMoreHistoryFilterResults(
                 filter = historyContentFilter,
                 filteredItemCount = visibleHistoryItems.size,
@@ -1313,6 +1318,7 @@ fun CommonListScreen(
                                 items = pageItems,
                                 isLoading = state.isLoading,
                                 error = state.error,
+                                loadMoreError = state.loadMoreError,
                                 searchQuery = searchQuery,
                                 columns = personalListColumns,
                                 isFavoritePersonalList = false,
@@ -1333,7 +1339,8 @@ fun CommonListScreen(
                                     onVideoClick(bvid, cid, coverUrl, isVertical)
                                 },
                                 onCollectionClick = onCollectionClick,
-                                onRetry = null,
+                                onRetry = { historyViewModel.retryHistory() },
+                                onRetryLoadMore = { historyViewModel.loadMore(retry = true) },
                                 onLoadMore = {
                                     historyViewModel.loadMore()
                                 },
@@ -2584,6 +2591,8 @@ private fun CommonListContent(
     onVideoClick: (String, Long, String, Boolean) -> Unit,
     onCollectionClick: ((FavoriteCollectionRoute) -> Unit)? = null,
     onRetry: (() -> Unit)? = null,
+    loadMoreError: String? = null,
+    onRetryLoadMore: (() -> Unit)? = null,
     onLoadMore: () -> Unit,
     onUnfavorite: ((com.android.purebilibili.data.model.response.VideoItem) -> Unit)?,
     historyDeleteSession: HistoryDeleteSession? = null,
@@ -2694,6 +2703,14 @@ private fun CommonListContent(
                 }
             }
         }
+    } else if (items.isEmpty() && loadMoreError != null && onRetryLoadMore != null) {
+        Box(modifier = emptyViewportModifier, contentAlignment = Alignment.Center) {
+            ListLoadError(
+                message = "加载更多失败：$loadMoreError",
+                onRetry = onRetryLoadMore,
+                modifier = Modifier.fillMaxWidth().padding(AppSpacingTokens.Medium),
+            )
+        }
     } else if (items.isEmpty()) {
         if (headerContent != null) {
             Column(
@@ -2723,11 +2740,17 @@ private fun CommonListContent(
             searchQuery,
             items.size,
             filteredItems.size,
+            isLoading,
+            error,
+            loadMoreError,
             hasMoreSearchResults,
             isLoadingMoreSearchResults
         ) {
             if (
                 searchPaginationFallbackEnabled &&
+                !isLoading &&
+                error == null &&
+                loadMoreError == null &&
                 shouldLoadMoreCommonListSearchResults(
                     searchQuery = searchQuery,
                     filteredItemCount = filteredItems.size,
@@ -2741,11 +2764,23 @@ private fun CommonListContent(
 
         if (filteredItems.isEmpty() && searchQuery.isNotEmpty()) {
              Box(emptyViewportModifier, contentAlignment = Alignment.Center) {
-                com.android.purebilibili.core.ui.EmptyState(
-                    message = "没有找到相关视频",
-                    animation = com.android.purebilibili.core.ui.MaidAnimation.SEARCH_EMPTY,
-                    enableEasterEgg = false
-                )
+                when {
+                    loadMoreError != null && onRetryLoadMore != null -> ListLoadError(
+                        message = "加载更多失败：$loadMoreError",
+                        onRetry = onRetryLoadMore,
+                        modifier = Modifier.fillMaxWidth().padding(AppSpacingTokens.Medium),
+                    )
+                    error != null && onRetry != null -> ListLoadError(
+                        message = error,
+                        onRetry = onRetry,
+                        modifier = Modifier.fillMaxWidth().padding(AppSpacingTokens.Medium),
+                    )
+                    else -> com.android.purebilibili.core.ui.EmptyState(
+                        message = "没有找到相关视频",
+                        animation = com.android.purebilibili.core.ui.MaidAnimation.SEARCH_EMPTY,
+                        enableEasterEgg = false,
+                    )
+                }
              }
         } else {
             // 自动加载更多
@@ -2757,8 +2792,11 @@ private fun CommonListContent(
                     total > 0 && last >= total - 4
                 }
             }
-            LaunchedEffect(shouldLoadMore.value) {
-                if (shouldLoadMore.value) onLoadMore()
+            LaunchedEffect(shouldLoadMore.value, loadMoreError, isLoading, error) {
+                if (
+                    shouldLoadMore.value && loadMoreError == null && !isLoading &&
+                    (!isHistoryPersonalList || error == null)
+                ) onLoadMore()
             }
 
             LazyVerticalGrid(
@@ -2781,6 +2819,15 @@ private fun CommonListContent(
                         onGestureEnd = onPinchColumnsEnd,
                     )
             ) {
+                if (isHistoryPersonalList && error != null && onRetry != null && !isLoading) {
+                    item(key = "refresh_error", span = { GridItemSpan(maxLineSpan) }) {
+                        ListLoadError(
+                            message = "刷新失败，已保留现有内容：$error",
+                            onRetry = onRetry,
+                            modifier = Modifier.fillMaxWidth().padding(AppSpacingTokens.Medium),
+                        )
+                    }
+                }
                 if (headerContent != null) {
                     item(key = "personal_recap", span = { GridItemSpan(maxLineSpan) }) {
                         headerContent()
@@ -3003,6 +3050,15 @@ private fun CommonListContent(
                         } else {
                             cardContent()
                         }
+                    }
+                }
+                if (loadMoreError != null && onRetryLoadMore != null) {
+                    item(key = "load_more_error", span = { GridItemSpan(maxLineSpan) }) {
+                        ListLoadError(
+                            message = "加载更多失败：$loadMoreError",
+                            onRetry = onRetryLoadMore,
+                            modifier = Modifier.fillMaxWidth().padding(AppSpacingTokens.Medium),
+                        )
                     }
                 }
             }
