@@ -642,6 +642,9 @@ internal fun HomeCategoryPageContent(
                                 videos = carouselVideos,
                                 autoplayEnabled = homeHeroCarouselAutoplayEnabled,
                                 onGestureActiveChange = onHeroCarouselGestureActiveChange,
+                                dissolvingVideos = dissolvingVideos,
+                                onDissolveComplete = onDissolveComplete,
+                                onLongPress = longPressCallback,
                                 onVideoClick = { video ->
                                     onVideoClick(
                                         HomeVideoClickRequest(

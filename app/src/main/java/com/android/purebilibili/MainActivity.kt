@@ -2031,14 +2031,6 @@ open class MainActivity : AppCompatActivity() {
                                         modifier = Modifier.size(maidStartupSize)
                                     )
                                 }
-                                AppText(
-                                    text = "BiliPai",
-                                    style = MaterialTheme.typography.headlineSmall,
-                                    color = MaterialTheme.colorScheme.onBackground,
-                                    modifier = Modifier
-                                        .background(MaterialTheme.colorScheme.background, RoundedCornerShape(16.dp))
-                                        .padding(horizontal = 20.dp, vertical = 8.dp)
-                                )
                             }
                         }
                     }

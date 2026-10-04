@@ -1057,23 +1057,31 @@ internal fun VideoContentSection(
         if (immersiveVideoContentChromeEnabled) {
             // 顶部标签与评论标题/排序共用同一张渐进模糊材质，避免两个独立渐变
             // 在相邻边界重新起算而形成断层。
+            // 液态玻璃开启时，播放器折叠/隐藏后 chrome 仍对滚动中的评论内容做
+            // 模糊采样；关闭时保持原有行为——折叠态使用内容页底色背景层。
             val commentChromeHeight = if (
                 pagerState.currentPage == 1 || pagerState.isScrollInProgress
             ) 46.dp else 0.dp
+            val chromeBlurActive = !isPlayerCollapsed || liquidGlassEnabled
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(tabBarVisibleHeightDp + commentChromeHeight)
-                    // 播放器收起后使用内容页底色，避免模糊采样卡片造成横向色带。
-                    .background(if (isPlayerCollapsed) MaterialTheme.colorScheme.surface else Color.Transparent)
+                    .background(
+                        if (isPlayerCollapsed && !liquidGlassEnabled) {
+                            MaterialTheme.colorScheme.surface
+                        } else {
+                            Color.Transparent
+                        }
+                    )
                     .biliPaiProgressiveTopBlur(
                         backdrop = videoContentMiuixBackdrop,
-                        enabled = progressiveCommentHeaderEnabled && !isPlayerCollapsed,
+                        enabled = progressiveCommentHeaderEnabled && chromeBlurActive,
                         surfaceColor = Color.Transparent,
                     )
                     .topSolidProgressiveFade(
                         surfaceColor = MaterialTheme.colorScheme.surface,
-                        enabled = solidProgressiveCommentHeaderEnabled && !isPlayerCollapsed,
+                        enabled = solidProgressiveCommentHeaderEnabled && chromeBlurActive,
                     ),
             )
         }
@@ -2152,7 +2160,11 @@ private fun VideoContentTabBar(
             modifier = Modifier
                 .fillMaxWidth()
                 .then(
-                    if (liquidChromeSpec.useTransparentTabRowBackground && !isPlayerCollapsed) {
+                    if (liquidChromeSpec.useTransparentTabRowBackground &&
+                        (!isPlayerCollapsed || liquidGlassEnabledForTabBar)
+                    ) {
+                        // 透明 + 上层渐进模糊材质；液态玻璃开启时折叠/隐藏播放器
+                        // 后同样成立，采样对象是滚动中的评论内容。
                         Modifier
                     } else {
                         Modifier.background(MaterialTheme.colorScheme.surface)
