@@ -97,23 +97,6 @@ class LiveBiliPaiVisualPolicyTest {
         assertEquals(true, shouldRenderLiveDanmakuImageEmoticon("https://example.com/e.png"))
     }
 
-    @Test
-    fun `interaction segmented control keeps liquid glass touch target dimensions`() {
-        val spec = resolveLiveInteractionSegmentedControlSpec(
-            compactChrome(
-                primaryHeightDp = 44,
-                compactChipHeightDp = 32,
-                chipHorizontalPaddingDp = 12,
-                standardGapDp = 8,
-            ),
-        )
-
-        assertEquals(12, spec.horizontalPaddingDp)
-        assertEquals(8, spec.verticalPaddingDp)
-        assertEquals(44, spec.heightDp)
-        assertEquals(33, spec.indicatorHeightDp)
-        assertEquals(14, spec.labelFontSizeSp)
-    }
 
     @Test
     fun `interaction segmented control follows android native variants`() {

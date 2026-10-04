@@ -212,6 +212,7 @@ fun LivePlayerScreen(
     var showContributionRankSheet by remember { mutableStateOf(false) }
     var showSendDanmakuSheet by remember { mutableStateOf(false) }
     var showEmoticonSheet by remember { mutableStateOf(false) }
+    var danmakuDraft by remember(roomId, siteId) { mutableStateOf("") }
     var showShareMessageSheet by remember { mutableStateOf(false) }
     var showStreamSourceSheet by remember { mutableStateOf(false) }
     var showPortraitMoreSheet by remember(roomId, siteId) { mutableStateOf(false) }
@@ -560,8 +561,11 @@ fun LivePlayerScreen(
                 is LivePlayerEvent.Toast -> {
                     Toast.makeText(context, event.message, Toast.LENGTH_SHORT).show()
                 }
-                LivePlayerEvent.DanmakuSent -> {
-                    if (showSendDanmakuSheet) showSendDanmakuSheet = false
+                is LivePlayerEvent.DanmakuSent -> {
+                    if (danmakuDraft.trim() == event.message) {
+                        danmakuDraft = ""
+                        showSendDanmakuSheet = false
+                    }
                 }
                 LivePlayerEvent.EmoticonSent -> {
                     showEmoticonSheet = false
@@ -748,9 +752,9 @@ fun LivePlayerScreen(
             qn = resolveLiveDefaultQualityQn(savedQuality),
         )
     }
-    // 播放 URL 管理 - 只在 playUrl 变化时重新加载
+    // 刷新地址即使返回相同 URL，也需要重新 prepare 已失败的播放源。
     val playUrl = (uiState as? LivePlayerState.Success)?.playUrl
-    LaunchedEffect(playUrl) {
+    LaunchedEffect(exoPlayer, playUrl, successState?.playbackRevision) {
         if (!playUrl.isNullOrEmpty()) {
             CrashReporter.markLivePlaybackStage("prepare_media_source")
             try {
@@ -776,6 +780,9 @@ fun LivePlayerScreen(
             }
             // 埋点
             AnalyticsHelper.logLivePlay(bilibiliRoomId, title, uname)
+        } else {
+            exoPlayer.stop()
+            exoPlayer.clearMediaItems()
         }
     }
     
@@ -1923,9 +1930,21 @@ fun LivePlayerScreen(
     if (showEmoticonSheet) {
         LiveEmoticonSheet(
             packages = emoticonPackages,
-            onSelected = { item ->
-                viewModel.sendEmoticon(item, preserveReplyTarget = showSendDanmakuSheet)
+            onInsertText = { item ->
+                val maxLength = successState?.danmakuPermission?.maxLength ?: 40
+                com.android.purebilibili.data.repository.appendLiveTextEmoticon(
+                    draft = danmakuDraft,
+                    item = item,
+                    maxLength = maxLength
+                ).onSuccess { draft ->
+                    danmakuDraft = draft
+                    showEmoticonSheet = false
+                    showSendDanmakuSheet = true
+                }.onFailure { error ->
+                    Toast.makeText(context, error.message, Toast.LENGTH_SHORT).show()
+                }
             },
+            onSendEmoticon = { item -> viewModel.sendEmoticon(item) },
             onDismiss = { showEmoticonSheet = false }
         )
     }
@@ -1980,7 +1999,7 @@ fun LivePlayerScreen(
         )
     }
 
-    if (showSendDanmakuSheet) {
+    if (showSendDanmakuSheet && !showEmoticonSheet) {
         LiveSendDanmakuSheet(
             onDismiss = {
                 showSendDanmakuSheet = false
@@ -1989,6 +2008,8 @@ fun LivePlayerScreen(
             onSend = { message, color, mode ->
                 viewModel.sendDanmaku(message, color, mode)
             },
+            message = danmakuDraft,
+            onMessageChange = { danmakuDraft = it },
             permission = successState?.danmakuPermission ?: com.android.purebilibili.data.repository.LiveDanmakuPermission(),
             replyTarget = replyTarget,
             onOpenEmote = {
