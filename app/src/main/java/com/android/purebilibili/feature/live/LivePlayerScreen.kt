@@ -1041,6 +1041,7 @@ fun LivePlayerScreen(
             ) {
                 LiveDanmakuOverlay(
                     danmakuFlow = viewModel.danmakuFlow,
+                    isFullscreen = isFullscreen,
                     displayArea = liveDanmakuDisplayArea,
                     danmakuSettings = liveDanmakuSettings,
                     modifier = Modifier

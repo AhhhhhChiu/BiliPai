@@ -4416,6 +4416,7 @@ private fun VideoPlayerSectionContent(
                 AndroidView(
                     factory = { ctx ->
                         DanmakuRenderView(ctx).apply {
+                            danmakuManager.isFullscreenSurface = isFullscreen
                             danmakuManager.updateViewport(viewport)
                             addOnLayoutChangeListener { view, _, _, _, _, _, _, _, _ ->
                                 if (view.width > 0 && view.height > 0) danmakuManager.attachView(this)
@@ -4429,6 +4430,7 @@ private fun VideoPlayerSectionContent(
                         }
                     },
                     update = { view ->
+                        danmakuManager.isFullscreenSurface = isFullscreen
                         danmakuManager.updateViewport(viewport)
                         //  [关键] 横竖屏切换后视图尺寸变化时，重新 attachView 确保弹幕正确显示
                         Logger.d("VideoPlayerSection") {

@@ -227,6 +227,13 @@ class DanmakuManager private constructor(
             applyConfigToController("opacity")
         }
     
+    var isFullscreenSurface: Boolean = false
+        set(value) {
+            if (field == value) return
+            field = value
+            applyConfigToController("fullscreen")
+        }
+
     var fontScale: Float
         get() = config.fontScale
         set(value) {
@@ -1027,13 +1034,10 @@ class DanmakuManager private constructor(
     /**
      *  批量更新弹幕设置（实时生效）
      */
-    fun updateSettings(
-        settings: DanmakuSettings,
-        fontScaleOverride: Float = settings.fontScale
-    ) {
+    fun updateSettings(settings: DanmakuSettings) {
         updateSettings(
             opacity = settings.opacity,
-            fontScale = fontScaleOverride,
+            fontScale = settings.fontScale,
             fontWeight = settings.fontWeight,
             speed = settings.speed,
             scrollDurationSeconds = settings.scrollDurationSeconds,
@@ -1209,7 +1213,7 @@ class DanmakuManager private constructor(
     private fun applyConfigToController(reason: String) {
         controller?.let { ctrl ->
             val currentViewport = viewport ?: danmakuView?.let(::resolveEffectiveViewport) ?: return
-            baseRenderConfig = config.resolveRenderConfig(currentViewport)
+            baseRenderConfig = config.resolveRenderConfig(currentViewport, isFullscreenSurface)
 
             // 记录设置后的基准时间，供倍速同步使用
             originalMoveTime = baseRenderConfig.scrollDurationMs

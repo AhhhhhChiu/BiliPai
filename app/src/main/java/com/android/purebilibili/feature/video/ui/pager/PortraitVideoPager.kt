@@ -405,7 +405,6 @@ fun PortraitVideoPager(
     val danmakuEnabled = danmakuSettingsLoaded && danmakuSettings.enabled
     val danmakuOpacity = danmakuSettings.opacity
     val danmakuFontScale = danmakuSettings.fontScale
-    val effectiveDanmakuFontScale = resolvePortraitDanmakuReadableFontScale(danmakuFontScale)
     val danmakuSpeed = danmakuSettings.speed
     val danmakuDisplayArea = danmakuSettings.displayArea
     val portraitDanmakuDisplayAreaMode = danmakuSettings.portraitDisplayAreaMode
@@ -1522,10 +1521,7 @@ fun PortraitVideoPager(
 
     LaunchedEffect(currentPlayingCid, currentPlayingAid, danmakuEnabled, danmakuSettingsLoaded, exoPlayer) {
         if (shouldLoadPortraitDanmaku(danmakuSettingsLoaded, currentPlayingCid, danmakuEnabled)) {
-            danmakuManager.updateSettings(
-                settings = danmakuSettings,
-                fontScaleOverride = effectiveDanmakuFontScale
-            )
+            danmakuManager.updateSettings(danmakuSettings)
             danmakuManager.isEnabled = true
             var durationMs = exoPlayer.duration
             var retries = 0
@@ -1560,14 +1556,10 @@ fun PortraitVideoPager(
     LaunchedEffect(
         danmakuManager,
         danmakuSettings,
-        effectiveDanmakuFontScale,
         danmakuSettingsLoaded
     ) {
         if (!danmakuSettingsLoaded) return@LaunchedEffect
-        danmakuManager.updateSettings(
-            settings = danmakuSettings,
-            fontScaleOverride = effectiveDanmakuFontScale
-        )
+        danmakuManager.updateSettings(danmakuSettings)
     }
 
     var portraitCommentOverlayActive by remember { mutableStateOf(false) }
@@ -3952,10 +3944,6 @@ internal fun shouldComposePortraitDanmakuOverlay(
         surfaceMode == expectedMode &&
         isCurrentPage &&
         isPlayerReadyForThisVideo
-}
-
-internal fun resolvePortraitDanmakuReadableFontScale(fontScale: Float): Float {
-    return (fontScale * 1.18f).coerceIn(0.3f, 2.0f)
 }
 
 internal data class PortraitVideoViewportSize(
