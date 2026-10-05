@@ -106,11 +106,15 @@ internal fun CommandDanmakuOverlay(
     onTripleClick: () -> Unit,
     onVoteSubmit: (CommandDanmakuItem, VoteOption, Int) -> Unit,
     isFollowing: Boolean = false,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    renderingPaused: Boolean = false,
 ) {
     val placementHeightPx = (viewport.heightPx - bottomInsetPx.coerceAtLeast(0)).coerceAtLeast(0)
     if (placementHeightPx == 0) return
-    val currentPosition by produceState(initialValue = player.currentPosition, key1 = player) {
+    val currentPosition by produceState(
+        initialValue = player.currentPosition, key1 = player, key2 = renderingPaused,
+    ) {
+        if (renderingPaused) awaitDispose { }
         while (true) {
             value = player.currentPosition
             kotlinx.coroutines.delay(80)

@@ -342,7 +342,7 @@ fun FullscreenPlayerOverlay(
     var swipeExitAccumulatedY by remember { mutableFloatStateOf(0f) }
     val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
     // Default to 15s so seek UI/haptics work immediately before prefs load (null blocked delta).
-    val fullscreenSwipeSeekSeconds by produceState(initialValue = 15, context) {
+    val fullscreenSwipeSeekSeconds by produceState(initialValue = 0, context) {
         SettingsManager.getFullscreenSwipeSeekSeconds(context)
             .collectLatest { value = it }
     }
@@ -913,7 +913,7 @@ fun FullscreenPlayerOverlay(
                                     totalDragDistanceX = dragDelta,
                                     containerWidthPx = screenWidth,
                                     fullscreenSwipeSeekSeconds = fullscreenSwipeSeekSeconds,
-                                    inlineSwipeSeekSeconds = 30,
+                                    inlineSwipeSeekSeconds = 0,
                                     gestureSensitivity = 1f
                                 )
                                 if (seekDelta != null) {

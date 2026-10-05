@@ -850,6 +850,13 @@ fun HomeScreen(
         context = kotlin.coroutines.EmptyCoroutineContext
     )
     val videoCardTransitionBackgroundState = LocalVideoCardTransitionBackgroundState.current
+    val deferHomeHeavyWork by remember(videoCardTransitionBackgroundState) {
+        derivedStateOf {
+            com.android.purebilibili.core.ui.transition.shouldDeferVideoCardSourceHeavyWork(
+                videoCardTransitionBackgroundState.exposureProvider(),
+            )
+        }
+    }
     val videoCardReturnGestureInProgress =
         videoCardTransitionBackgroundState.isReturnGestureInProgressProvider()
     var settledShowHomeUpAvatars by rememberSaveable {
@@ -859,11 +866,12 @@ fun HomeScreen(
         homeSettings.showHomeUpAvatars,
         videoCardReturnGestureInProgress,
         isReturningFromVideoDetail,
+        deferHomeHeavyWork,
     ) {
         // 首页作为预测返回的底层页重新进入活跃状态时，DataStore 可能正好补发新值。
         // 在手势/整卡落位期间改变作者行高度会让 sharedBounds 的目标边界跳动；先沿用
         // 首页上次稳定展示的值，落位完成后再应用，同时关闭头像时仍不保留横向头像槽。
-        if (!videoCardReturnGestureInProgress && !isReturningFromVideoDetail) {
+        if (!deferHomeHeavyWork && !videoCardReturnGestureInProgress && !isReturningFromVideoDetail) {
             settledShowHomeUpAvatars = homeSettings.showHomeUpAvatars
         }
     }
@@ -1189,7 +1197,8 @@ fun HomeScreen(
     val wallpaperPalette by com.android.purebilibili.feature.home.components.cards.WallpaperPaletteStore.currentPalette.collectAsStateWithLifecycle()
     val homeLifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
     val homeLifecycleState by homeLifecycleOwner.lifecycle.currentStateFlow.collectAsStateWithLifecycle()
-    LaunchedEffect(homeWallpaperUri, wallpaperPalette == null, homeLifecycleState) {
+    LaunchedEffect(homeWallpaperUri, wallpaperPalette == null, homeLifecycleState, deferHomeHeavyWork) {
+        if (deferHomeHeavyWork) return@LaunchedEffect
         if (homeLifecycleState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)) {
             if (wallpaperPalette == null || homeWallpaperUri.isNotBlank()) {
                 com.android.purebilibili.feature.home.components.cards.WallpaperPaletteStore.loadWallpaperPalette(
@@ -2465,7 +2474,8 @@ fun HomeScreen(
                                  HomeCategoryPageContent(
                                      category = category,
                                      categoryState = pageCategoryState,
-                                     isActive = pagerState.currentPage == page,
+                                     isActive = isTopLevelActive && pagerState.currentPage == page &&
+                                         !deferHomeHeavyWork,
                                      gridState = contentGridState,
                                      gridColumns = effectiveGridColumns,
                                      contentPadding = pageContentPadding,
@@ -3176,6 +3186,7 @@ fun HomeScreen(
         preloadAheadCount,
         isReturningFromVideoDetail,
         homeCoverRequestSpec,
+        deferHomeHeavyWork,
         isTopLevelActive,
         lifecycleOwner,
     ) {
@@ -3183,7 +3194,7 @@ fun HomeScreen(
         if (isDataSaverActive) return@LaunchedEffect
         if (preloadAheadCount <= 0) return@LaunchedEffect
         // 详情返回 morph 窗口：延后封面预加载，避免与 live surface + 景深抢 IO/主线程。
-        if (isReturningFromVideoDetail) return@LaunchedEffect
+        if (isReturningFromVideoDetail || deferHomeHeavyWork) return@LaunchedEffect
         if (!isTopLevelActive) return@LaunchedEffect
         
         val currentGridState = if (currentCategory == HomeCategory.POPULAR) {

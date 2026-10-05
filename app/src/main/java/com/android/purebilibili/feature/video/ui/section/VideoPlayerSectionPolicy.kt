@@ -618,6 +618,7 @@ internal fun resolveHorizontalSeekDeltaMs(
 ): Long? {
     if (isFullscreen && fullscreenSwipeSeekEnabled) {
         val seekSeconds = fullscreenSwipeSeekSeconds ?: return null
+        if (seekSeconds == 0) return (totalDragDistanceX * 200f * gestureSensitivity).toLong()
         return resolveConfiguredSeekDeltaMs(
             totalDragDistanceX = totalDragDistanceX,
             containerWidthPx = containerWidthPx,
@@ -626,6 +627,7 @@ internal fun resolveHorizontalSeekDeltaMs(
         )
     }
     if (!isFullscreen) {
+        if (inlineSwipeSeekSeconds == 0) return (totalDragDistanceX * 200f * gestureSensitivity).toLong()
         return resolveConfiguredSeekDeltaMs(
             totalDragDistanceX = totalDragDistanceX,
             containerWidthPx = containerWidthPx,

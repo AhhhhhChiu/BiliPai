@@ -784,19 +784,10 @@ fun CommonListScreen(
     val statusBarHeightPx = with(LocalDensity.current) {
         WindowInsets.statusBars.asPaddingValues().calculateTopPadding().toPx()
     }
-    val commonListHeaderMaxCollapsePx = if (supportsCollapsibleCommonListHeader) {
-        resolveCommonListHeaderMaxCollapsePxForMode(
-            collapseMode = commonListHeaderCollapseMode,
-            fixedTopBarHeightPx = fixedTopBarHeightPx,
-            statusBarHeightPx = statusBarHeightPx,
-        )
+    val commonListHeaderMaxCollapsePx = if (commonListHeaderCollapseEnabled) {
+        (headerHeightPx.toFloat() - statusBarHeightPx).coerceAtLeast(0f)
     } else {
-        resolveCommonListHeaderMaxCollapsePx(
-            headerHeightPx = headerHeightPx,
-            pinnedDockHeightPx = 0,
-            topInsetPx = statusBarHeightPx,
-            retainPinnedDock = false,
-        )
+        0f
     }
     fun animateCommonListHeaderOffsetTo(targetOffsetPx: Float) {
         if (kotlin.math.abs(commonListHeaderOffsetPx - targetOffsetPx) <= 0.5f) {
@@ -2047,23 +2038,12 @@ fun CommonListScreen(
                         ?.coerceIn(constraints.minWidth, boundedMaxWidth)
                         ?: constraints.minWidth
                     if (supportsCollapsibleCommonListHeader && placeables.isNotEmpty()) {
-                        val titleHeight = placeables.first().height
-                        val floatingDockHeight = placeables.drop(1).sumOf { it.height }
-                        val titleOffset = resolveHistoryTitleOffsetPx(
-                            headerOffsetPx = commonListHeaderOffsetPx,
-                            maxCollapsePx = commonListHeaderMaxCollapsePx,
-                            titleHeightPx = titleHeight,
-                        )
-                        val floatingDockTop = (titleHeight + commonListHeaderOffsetPx)
-                            .coerceAtLeast(statusBarHeightPx)
-                            .toInt()
-                        val height = (floatingDockTop + floatingDockHeight)
-                            .coerceIn(constraints.minHeight, constraints.maxHeight)
+                        val offset = commonListHeaderOffsetPx.toInt()
+                        val height = (placeables.sumOf { it.height } + offset)
+                            .coerceIn(statusBarHeightPx.toInt().coerceAtLeast(constraints.minHeight), constraints.maxHeight)
                         layout(width, height) {
-                            // 标题完整离场；Dock 仍只上移到状态栏安全区下方。
-                            placeables.first().placeRelative(0, titleOffset)
-                            var y = floatingDockTop
-                            placeables.drop(1).forEach { placeable ->
+                            var y = offset
+                            placeables.forEach { placeable ->
                                 placeable.placeRelative(0, y)
                                 y += placeable.height
                             }

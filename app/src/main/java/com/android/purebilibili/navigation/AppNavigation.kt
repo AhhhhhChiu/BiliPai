@@ -23,6 +23,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue //  新增
 import androidx.compose.runtime.LaunchedEffect // 新增
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
@@ -624,7 +625,15 @@ fun AppNavigation(
         val wallpaperPalette by com.android.purebilibili.feature.home.components.cards.WallpaperPaletteStore
             .currentPalette
             .collectAsStateWithLifecycle()
-        LaunchedEffect(globalHomeWallpaperUri) {
+        val deferGlobalWallpaperPalette by remember(videoCardTransitionClock) {
+            derivedStateOf {
+                // All non-idle phases retain the detail/source transition contract.
+                videoCardTransitionClock.phase !=
+                    com.android.purebilibili.core.ui.transition.VideoCardTransitionBackgroundPhase.IDLE
+            }
+        }
+        LaunchedEffect(globalHomeWallpaperUri, deferGlobalWallpaperPalette) {
+            if (deferGlobalWallpaperPalette) return@LaunchedEffect
             com.android.purebilibili.feature.home.components.cards.WallpaperPaletteStore.loadWallpaperPalette(
                 context = context,
                 uri = globalHomeWallpaperUri,

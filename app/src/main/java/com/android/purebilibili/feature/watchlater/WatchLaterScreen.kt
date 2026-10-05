@@ -716,10 +716,14 @@ fun WatchLaterScreen(
             filterCount = WatchLaterFilter.entries.size,
         )
     }
-    val scrollBehavior = if (homeSettings.homeHeaderCollapseMode.hasAnyCollapse) {
-        TopAppBarDefaults.enterAlwaysScrollBehavior()
-    } else {
-        TopAppBarDefaults.pinnedScrollBehavior()
+    val watchLaterHeaderCollapseMode = homeSettings.commonListHeaderCollapseMode
+    val scrollBehavior = when (watchLaterHeaderCollapseMode) {
+        com.android.purebilibili.core.store.CommonListHeaderCollapseMode.ALWAYS_VISIBLE ->
+            TopAppBarDefaults.pinnedScrollBehavior()
+        com.android.purebilibili.core.store.CommonListHeaderCollapseMode.SHOW_ON_REVERSE_SCROLL ->
+            TopAppBarDefaults.enterAlwaysScrollBehavior()
+        com.android.purebilibili.core.store.CommonListHeaderCollapseMode.SHOW_AT_TOP_ONLY ->
+            TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     }
     var isBatchMode by rememberSaveable { mutableStateOf(false) }
     var selectedBvids by rememberSaveable { mutableStateOf(setOf<String>()) }
@@ -775,14 +779,18 @@ fun WatchLaterScreen(
 
     // 分类 tab 行：下滑折叠隐藏，上滑/回顶重新出现
     var watchLaterTabsVisible by remember { mutableStateOf(true) }
-    LaunchedEffect(gridState) {
+    LaunchedEffect(gridState, watchLaterHeaderCollapseMode, scrollBehavior) {
         var lastFirstVisibleItem = 0
         var lastScrollOffset = 0
         snapshotFlow {
             gridState.firstVisibleItemIndex to gridState.firstVisibleItemScrollOffset
         }.collect { (firstVisibleItem, scrollOffset) ->
-            if (firstVisibleItem == 0 && scrollOffset < 100) {
+            val isAtTop = firstVisibleItem == 0 && scrollOffset == 0
+            if (watchLaterHeaderCollapseMode == com.android.purebilibili.core.store.CommonListHeaderCollapseMode.ALWAYS_VISIBLE || isAtTop) {
                 watchLaterTabsVisible = true
+                scrollBehavior.state.heightOffset = 0f
+            } else if (watchLaterHeaderCollapseMode == com.android.purebilibili.core.store.CommonListHeaderCollapseMode.SHOW_AT_TOP_ONLY) {
+                watchLaterTabsVisible = false
             } else {
                 val isScrollingDown = when {
                     firstVisibleItem > lastFirstVisibleItem -> true
@@ -1089,6 +1097,12 @@ fun WatchLaterScreen(
                     ),
                     scrollBehavior = scrollBehavior
                 )
+                AnimatedVisibility(
+                    visible = watchLaterTabsVisible,
+                    enter = expandVertically() + fadeIn(),
+                    exit = shrinkVertically() + fadeOut(),
+                ) {
+                    Column {
                 if (hideListTopSearchBar) {
                     if (showListScopedSearchActiveBar) {
                         com.android.purebilibili.feature.list.ListScopedSearchActiveBar(
@@ -1112,6 +1126,8 @@ fun WatchLaterScreen(
                     )
                 }
                 Spacer(modifier = Modifier.height(AppSpacingTokens.Small))
+                    }
+                }
                 val watchLaterFilterOptions = remember(state.filter, state.totalCount) {
                     WatchLaterFilter.entries.map { filter ->
                         AppSegmentOption(
