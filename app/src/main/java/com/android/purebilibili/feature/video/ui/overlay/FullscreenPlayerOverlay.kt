@@ -1014,7 +1014,11 @@ fun FullscreenPlayerOverlay(
             if (currentCid > 0 && danmakuEnabled) {
                 danmakuManager.updateSettings(settings = danmakuSettings)
                 danmakuManager.isEnabled = true
-                
+                // UP 主弹幕徽章：全屏路径经小窗管理器，owner.mid 从其缓存的详情状态取
+                danmakuManager.bindUpOwnerMid(
+                    miniPlayerManager.cachedUiState?.info?.owner?.mid ?: 0L
+                )
+
                 // 等待播放器 duration 可用后再加载弹幕，启用 Protobuf API
                 var durationMs = player?.duration ?: 0L
                 var retries = 0

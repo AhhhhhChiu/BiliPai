@@ -9,8 +9,11 @@ import android.os.SystemClock
 import android.util.Log
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.media3.common.Player
@@ -129,6 +132,11 @@ class DanmakuManager private constructor(
         }
     }
     private var controller: DanmakuEngine? = null
+    /** UP 主身份（owner.mid 的 crc32 hex）；controller 建立前先暂存，attachView 时补绑。 */
+    private var pendingUpOwnerUserHash: String? = null
+    /** 供弹幕池列表等组合层读取当前 UP 主标识。 */
+    var upOwnerUserHash: String? by mutableStateOf<String?>(null)
+        private set
     /** 最近一次成功 replaceWindow 的 controller；用于判断新 view 是否需要补时间线。 */
     private var timelineSyncedController: DanmakuEngine? = null
     /** load 完成时 controller 尚为 null，等 attachView 再补。 */
@@ -220,6 +228,20 @@ class DanmakuManager private constructor(
 
     internal fun bindSessionIdentity(identity: DanmakuSessionIdentity) {
         sessionIdentity = identity
+    }
+
+    /**
+     * 绑定视频 UP 主 mid，用于给 UP 主发送的弹幕渲染 "UP" 徽章。
+     * 与 B 站协议一致：DanmakuElem.midHash 为 mid 字符串的 crc32 hex。
+     */
+    fun bindUpOwnerMid(mid: Long) {
+        pendingUpOwnerUserHash = if (mid > 0L) {
+            DanmakuCloudRuleSyncPolicy.crc32Hex(mid.toString())
+        } else {
+            null
+        }
+        upOwnerUserHash = pendingUpOwnerUserHash
+        controller?.upOwnerUserHash = pendingUpOwnerUserHash
     }
     
     // 便捷属性访问器
@@ -1389,6 +1411,7 @@ class DanmakuManager private constructor(
         }
         danmakuView = view
         controller = view.engine
+        controller?.upOwnerUserHash = pendingUpOwnerUserHash
         if (!isRenderingEnabled) {
             controller?.pause()
             view.visibility = android.view.View.INVISIBLE

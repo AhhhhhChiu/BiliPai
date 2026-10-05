@@ -71,6 +71,8 @@ import com.android.purebilibili.feature.video.ui.gesture.resolveTwoFingerSpeedGe
 import com.android.purebilibili.feature.video.playback.policy.resolveDisplayedQualityId
 import com.android.purebilibili.core.ui.motion.AppMotionEasing
 import com.android.purebilibili.core.ui.transition.LocalVideoCardTransitionBackgroundState
+import com.android.purebilibili.core.ui.motion.rememberSystemReduceMotion
+import androidx.compose.runtime.withFrameNanos
 import com.android.purebilibili.core.ui.transition.VideoCardTransitionBackgroundPhase
 import com.android.purebilibili.core.ui.components.AppButton
 import com.android.purebilibili.core.ui.components.AppSurface
@@ -1682,6 +1684,10 @@ private fun VideoPlayerSectionContent(
     val danmakuManager = rememberDanmakuManager(bvid)
     val overlayDrawerHazeState = com.android.purebilibili.core.ui.blur.rememberRecoverableHazeState()
     var showDanmakuPoolSheet by remember { mutableStateOf(false) }
+    // 关联视频命令弹幕：点击后先确认再跳转
+    var pendingCommandLinkItem by remember {
+        mutableStateOf<com.android.purebilibili.feature.video.danmaku.CommandDanmakuItem?>(null)
+    }
     var showEndDrawer by remember { mutableStateOf(false) }
     var endDrawerInitialTab by remember { mutableIntStateOf(0) }
     LaunchedEffect(endDrawerRequestKey) {
@@ -3613,8 +3619,9 @@ private fun VideoPlayerSectionContent(
         var hasSurfaceRevealSettled by remember(bvid) {
             mutableStateOf(coverBootstrapState.hasStartedSmoothReveal)
         }
-        val revealMotionSpec = remember {
-            resolveVideoPlayerRevealMotionSpec()
+        val reduceRevealMotion = rememberSystemReduceMotion()
+        val revealMotionSpec = remember(reduceRevealMotion) {
+            resolveVideoPlayerRevealMotionSpec(reducedMotion = reduceRevealMotion)
         }
         val surfaceRevealSpec = remember(
             forceCoverDuringReturnAnimation,
@@ -4039,6 +4046,7 @@ private fun VideoPlayerSectionContent(
         isFirstFrameRendered,
         forceCoverDuringReturnAnimation,
         keepCoverForManualStart,
+        revealMotionSpec,
     ) {
         if (
             shouldResetSmoothCoverReveal(
@@ -4054,7 +4062,12 @@ private fun VideoPlayerSectionContent(
             return@LaunchedEffect
         }
         if (hasStartedSmoothReveal) return@LaunchedEffect
-        delay(revealMotionSpec.coverRevealHoldDelayMillis.toLong())
+        // Let the rendered first frame reach a draw boundary instead of adding an
+        // arbitrary 96ms hold on top of the card's spatial motion.
+        withFrameNanos { }
+        if (revealMotionSpec.coverRevealHoldDelayMillis > 0) {
+            delay(revealMotionSpec.coverRevealHoldDelayMillis.toLong())
+        }
         if (
             shouldCommitSmoothCoverReveal(
                 isFirstFrameRendered = isFirstFrameRendered,
@@ -4067,7 +4080,7 @@ private fun VideoPlayerSectionContent(
         }
     }
     // 揭开动画落定前封面保持不透明垫底；落定后再移除（此时视频已完全盖住封面，移除不可见）。
-    LaunchedEffect(bvid, hasStartedSmoothReveal) {
+    LaunchedEffect(bvid, hasStartedSmoothReveal, revealMotionSpec.surfaceRevealDurationMillis) {
         if (!hasStartedSmoothReveal) {
             hasSurfaceRevealSettled = false
             return@LaunchedEffect
@@ -4572,6 +4585,22 @@ private fun VideoPlayerSectionContent(
                     player = playerState.player,
                     onFollowClick = onToggleFollow,
                     onTripleClick = onTriple,
+                    onLinkClick = { item ->
+                        val targetBvid = item.linkBvid.ifBlank {
+                            if (item.linkAid > 0L) {
+                                com.android.purebilibili.core.util.IdUtils.av2bv(item.linkAid)
+                            } else ""
+                        }
+                        if (targetBvid.isBlank()) {
+                            android.widget.Toast.makeText(
+                                context,
+                                "关联视频信息缺失，无法跳转",
+                                android.widget.Toast.LENGTH_SHORT
+                            ).show()
+                        } else {
+                            pendingCommandLinkItem = item
+                        }
+                    },
                     onVoteSubmit = { item, option, optionIndex ->
                         val success = uiState as? VideoPlaybackUiState.Success
                         if (item.voteKind == com.android.purebilibili.feature.video.danmaku.VoteDanmakuKind.GRADE) {
@@ -4668,6 +4697,38 @@ private fun VideoPlayerSectionContent(
                     isFollowing = isFollowed,
                     modifier = Modifier.fillMaxSize()
                 )
+                // 关联视频命令弹幕：跳转前确认
+                pendingCommandLinkItem?.let { linkItem ->
+                    val dialogTargetBvid = linkItem.linkBvid.ifBlank {
+                        if (linkItem.linkAid > 0L) {
+                            com.android.purebilibili.core.util.IdUtils.av2bv(linkItem.linkAid)
+                        } else ""
+                    }
+                    com.android.purebilibili.core.ui.AppAlertDialog(
+                        onDismissRequest = { pendingCommandLinkItem = null },
+                        title = { AppText("跳转关联视频") },
+                        text = {
+                            AppText("是否跳转到「${linkItem.linkTitle.ifBlank { linkItem.content }}」？")
+                        },
+                        confirmButton = {
+                            AppTextButton(onClick = {
+                                val item = pendingCommandLinkItem
+                                pendingCommandLinkItem = null
+                                if (item != null) {
+                                    commandState.dismiss(item.id)
+                                    onRelatedVideoClick(dialogTargetBvid, null)
+                                }
+                            }) {
+                                AppText("跳转")
+                            }
+                        },
+                        dismissButton = {
+                            AppTextButton(onClick = { pendingCommandLinkItem = null }) {
+                                AppText("取消")
+                            }
+                        },
+                    )
+                }
                 // 3.1 高赞弹幕悬浮条：当前时间窗内点赞 Top-N，支持一键跟发
                 if (danmakuHotBarEnabled) {
                     val hotBarLikedDanmakuIds by actions.likedDanmakuIds
@@ -5977,6 +6038,7 @@ private fun VideoPlayerSectionContent(
                     .collectAsStateWithLifecycle(initialValue = "", lifecycle = lifecycleOwner.lifecycle)
                 DanmakuPoolSheet(
                     danmakuList = danmakuManager.getLoadedDanmakuList(),
+                    upOwnerUserHash = danmakuManager.upOwnerUserHash,
                     currentPositionMs = playerState.player?.currentPosition ?: 0L,
                     onSeekTo = { posMs ->
                         val commitResult = commitPlaybackSeekInteraction(

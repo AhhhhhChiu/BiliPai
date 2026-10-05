@@ -105,6 +105,7 @@ internal fun CommandDanmakuOverlay(
     onFollowClick: () -> Unit,
     onTripleClick: () -> Unit,
     onVoteSubmit: (CommandDanmakuItem, VoteOption, Int) -> Unit,
+    onLinkClick: (CommandDanmakuItem) -> Unit = {},
     isFollowing: Boolean = false,
     modifier: Modifier = Modifier,
     renderingPaused: Boolean = false,
@@ -135,6 +136,7 @@ internal fun CommandDanmakuOverlay(
                     onFollowClick = onFollowClick,
                     onTripleClick = onTripleClick,
                     onVoteSubmit = onVoteSubmit,
+                    onLinkClick = onLinkClick,
                     isFollowing = isFollowing,
                     onDismiss = { state.dismiss(item.id) }
                 )
@@ -153,6 +155,7 @@ private fun CommandDanmakuCard(
     onFollowClick: () -> Unit,
     onTripleClick: () -> Unit,
     onVoteSubmit: (CommandDanmakuItem, VoteOption, Int) -> Unit,
+    onLinkClick: (CommandDanmakuItem) -> Unit,
     isFollowing: Boolean,
     onDismiss: () -> Unit
 ) {
@@ -270,8 +273,18 @@ private fun CommandDanmakuCard(
                     onDismiss = onDismiss,
                 )
             } else {
+                val isLinkWithTarget = item.type == CommandDanmakuType.LINK &&
+                    (item.linkBvid.isNotBlank() || item.linkAid > 0L)
                 AppSurface(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .then(
+                            if (isLinkWithTarget) {
+                                Modifier.clickable(role = Role.Button) { onLinkClick(item) }
+                            } else {
+                                Modifier
+                            }
+                        ),
                     color = Color.Black.copy(alpha = 0.54f),
                     contentColor = Color.White,
                     shape = AppShapes.container(ContainerLevel.Chip)
