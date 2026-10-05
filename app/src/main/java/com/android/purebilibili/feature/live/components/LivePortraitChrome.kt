@@ -686,7 +686,7 @@ internal fun LivePortraitBottomBar(
             onToggle = onToggleDanmaku,
             activeTint = LiveStatusPalette.MediaContent,
             inactiveTint = LiveStatusPalette.MediaContent.copy(alpha = 0.55f),
-            modifier = Modifier.size(44.dp)
+            modifier = Modifier.size(30.dp)
         )
 
         // 2. 发送弹幕输入条
@@ -697,7 +697,7 @@ internal fun LivePortraitBottomBar(
             contentColor = LiveStatusPalette.MediaContent,
             modifier = Modifier
                 .weight(1f)
-                .heightIn(min = 44.dp)
+                .heightIn(min = 30.dp)
                 .clip(barShape)
                 .then(
                     if (hazeState != null) {
@@ -730,7 +730,7 @@ internal fun LivePortraitBottomBar(
             LiveLikeButton(
                 tint = LiveStatusPalette.MediaContent,
                 onLike = onLike,
-                modifier = Modifier.size(44.dp)
+                modifier = Modifier.size(30.dp)
             )
         }
 
@@ -739,7 +739,7 @@ internal fun LivePortraitBottomBar(
             AppIconButton(
                 onClick = onOpenEmote,
                 colors = mediaColors,
-                modifier = Modifier.size(44.dp)
+                modifier = Modifier.size(30.dp)
             ) {
                 AppIcon(
                     imageVector = Icons.Outlined.EmojiEmotions,
@@ -754,7 +754,7 @@ internal fun LivePortraitBottomBar(
             onClick = onToggleChat,
             colors = mediaColors,
             modifier = Modifier
-                .size(44.dp)
+                .size(30.dp)
                 .semantics { stateDescription = if (chatVisible) "聊天已显示" else "聊天已隐藏" },
         ) {
             AppIcon(
@@ -768,7 +768,7 @@ internal fun LivePortraitBottomBar(
         AppIconButton(
             onClick = onOpenMore,
             colors = mediaColors,
-            modifier = Modifier.size(44.dp)
+            modifier = Modifier.size(30.dp)
         ) {
             AppIcon(
                 imageVector = Icons.Outlined.MoreHoriz,

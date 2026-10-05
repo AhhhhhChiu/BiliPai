@@ -129,8 +129,8 @@ class LiveBiliPaiVisualPolicyTest {
         val playerControl = resolveLivePlayerControlVisualSpec()
         val sheet = resolveLiveSheetVisualSpec()
 
-        assertEquals(40, chatInput.controlSizeDp)
-        assertEquals(40, chatInput.sendButtonSizeDp)
+        assertEquals(30, chatInput.controlSizeDp)
+        assertEquals(30, chatInput.sendButtonSizeDp)
         assertEquals(40, playerControl.rowHeightDp)
         assertEquals(420, sheet.emoticonListMaxHeightDp)
         assertEquals(360, sheet.contributionListMaxHeightDp)

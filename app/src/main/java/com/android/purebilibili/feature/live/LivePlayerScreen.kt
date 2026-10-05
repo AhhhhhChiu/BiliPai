@@ -2087,11 +2087,6 @@ private fun LivePortraitOverlayAppBar(
     val palette = rememberLiveChromePalette()
     val roomColorTokens = resolveLiveBiliPaiRoomColorTokens()
     val backIcon = rememberAppBackIcon()
-    val playerChromeProfile = rememberAppPlayerChromeProfile()
-    val liveVisualSpec = remember(playerChromeProfile.tabPresentation) {
-        resolveLiveVisualSpec(playerChromeProfile.tabPresentation)
-    }
-    val compactChrome = playerChromeProfile.compactChromeSpec
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -2113,7 +2108,7 @@ private fun LivePortraitOverlayAppBar(
     ) {
         AppIconButton(
             onClick = onBack,
-            modifier = Modifier.size(liveVisualSpec.playerButtonTouchTargetDp.dp)
+            modifier = Modifier.size(30.dp)
         ) {
             AppIcon(
                 backIcon,
@@ -2121,7 +2116,6 @@ private fun LivePortraitOverlayAppBar(
                 tint = roomColorTokens.inputOverlayColor
             )
         }
-        Spacer(Modifier.width(AppSpacingTokens.ExtraSmall))
         AppSurface(
             shape = AppShapes.container(ContainerLevel.Pill),
             color = LiveStatusPalette.MediaScrim.copy(alpha = 0.42f),
@@ -2139,10 +2133,10 @@ private fun LivePortraitOverlayAppBar(
         ) {
             Row(
                 modifier = Modifier.padding(
-                    start = 3.dp,
-                    end = if (!isFollowing) 4.dp else AppSpacingTokens.Small,
-                    top = 3.dp,
-                    bottom = 3.dp
+                    start = 2.dp,
+                    end = if (!isFollowing) 3.dp else AppSpacingTokens.ExtraSmall,
+                    top = 2.dp,
+                    bottom = 2.dp
                 ),
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -2151,13 +2145,13 @@ private fun LivePortraitOverlayAppBar(
                     contentDescription = null,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier
-                        .size(32.dp)
+                        .size(24.dp)
                         .clip(CircleShape)
                         .background(roomColorTokens.inputOverlayColor.copy(alpha = 0.18f))
                 )
-                Spacer(Modifier.width(AppSpacingTokens.Small))
+                Spacer(Modifier.width(AppSpacingTokens.Micro))
                 Column(
-                    modifier = Modifier.widthIn(min = 40.dp, max = 110.dp),
+                    modifier = Modifier.widthIn(min = 36.dp, max = 88.dp),
                     verticalArrangement = Arrangement.Center
                 ) {
                     AppText(
@@ -2165,6 +2159,7 @@ private fun LivePortraitOverlayAppBar(
                         color = roomColorTokens.inputOverlayColor,
                         style = MaterialTheme.typography.labelLarge,
                         fontWeight = FontWeight.SemiBold,
+                        lineHeight = 16.sp,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -2174,6 +2169,7 @@ private fun LivePortraitOverlayAppBar(
                             text = secondaryText,
                             color = roomColorTokens.inputOverlayColor.copy(alpha = 0.72f),
                             style = MaterialTheme.typography.labelSmall,
+                            lineHeight = 13.sp,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
@@ -2251,7 +2247,7 @@ private fun LivePortraitOverlayAppBar(
         }
         Spacer(Modifier.width(AppSpacingTokens.Small))
         AppWindowActionMenu(
-            modifier = Modifier.size(liveVisualSpec.playerButtonTouchTargetDp.dp),
+            modifier = Modifier.size(30.dp),
             groups = listOf(
                 listOf(
                     AppWindowAction(
