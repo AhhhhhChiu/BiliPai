@@ -353,6 +353,7 @@ fun HomeScreen(
     // [Feature] Video Preview State (Global Scope)
     val targetVideoItemState = remember { mutableStateOf<VideoItem?>(null) }
     var dissolvingNotInterestedVideo by remember { mutableStateOf<VideoItem?>(null) }
+    var previewDissolvingNotInterestedVideo by remember { mutableStateOf<VideoItem?>(null) }
     var reflowingNotInterestedVideo by remember { mutableStateOf<VideoItem?>(null) }
     var pendingNotInterestedVideo by remember { mutableStateOf<VideoItem?>(null) }
     var pendingVideoShare by remember {
@@ -1088,22 +1089,29 @@ fun HomeScreen(
             if (video?.bvid == bvid) reflowingNotInterestedVideo = video
         }
     }
-    LaunchedEffect(reflowingNotInterestedVideo, systemReduceMotion) {
+    LaunchedEffect(reflowingNotInterestedVideo, previewDissolvingNotInterestedVideo, systemReduceMotion) {
         val video = reflowingNotInterestedVideo ?: return@LaunchedEffect
         // Open once the 180 ms particle tail has cleared; the 240 ms reflow is settling.
         if (!systemReduceMotion) delay(180L)
+        if (previewDissolvingNotInterestedVideo?.bvid == video.bvid) return@LaunchedEffect
         pendingNotInterestedVideo = video
     }
     val onDismissVideoCallback = remember(viewModel, context, systemReduceMotion) {
-        { video: VideoItem ->
+        { video: VideoItem, keepPreviewOpen: Boolean ->
             if (dissolvingNotInterestedVideo == null && pendingNotInterestedVideo == null) {
-                targetVideoItemState.value = null
-                reflowingNotInterestedVideo = null
-                dissolvingNotInterestedVideo = video
-                if (!systemReduceMotion && isThanosEffectSupported(context)) {
-                    viewModel.startVideoDissolve(video.bvid)
+                val particleDissolveEnabled = !systemReduceMotion && isThanosEffectSupported(context)
+                if (keepPreviewOpen && particleDissolveEnabled) {
+                    // Finish the long preview card first; its completion starts the feed-card dissolve.
+                    previewDissolvingNotInterestedVideo = video
                 } else {
-                    onDissolveCompleteCallback(video.bvid)
+                    reflowingNotInterestedVideo = null
+                    dissolvingNotInterestedVideo = video
+                    targetVideoItemState.value = null
+                    if (particleDissolveEnabled) {
+                        viewModel.startVideoDissolve(video.bvid)
+                    } else {
+                        onDissolveCompleteCallback(video.bvid)
+                    }
                 }
             }
         }
@@ -1150,7 +1158,10 @@ fun HomeScreen(
     val chromeContentReady = !(chromeCategoryState.isLoading &&
         chromeCategoryState.videos.isEmpty() && chromeCategoryState.liveRooms.isEmpty())
     val shouldCaptureHomeChromeBackdrop = isLiquidGlassEnabled ||
-        isHeaderBlurEnabled || isBottomBarBlurEnabled || appThemeConfig.progressiveTopBlurEnabled
+        isHeaderBlurEnabled || isBottomBarBlurEnabled || appThemeConfig.progressiveTopBlurEnabled ||
+        (targetVideoItemState.value != null &&
+            shouldAllowRenderEffectBackedHazeEffect(Build.VERSION.SDK_INT) &&
+            !com.android.purebilibili.core.ui.performance.isLowBlurBudgetForced())
     val homeMiuixBackdropSource = if (shouldCaptureHomeChromeBackdrop) {
         rememberChromeBackdropSource()
     } else {
@@ -2492,7 +2503,7 @@ fun HomeScreen(
                                          viewModel.loadMore(category, selectedPopularSubCategory, retry = true)
                                      },
                                      onRetryRefresh = { viewModel.refresh(category, selectedPopularSubCategory) },
-                                     onDismissVideo = onDismissVideoCallback,
+                                     onDismissVideo = { video -> onDismissVideoCallback(video, false) },
                                      onWatchLater = onWatchLaterCallback,
                                      onDissolveComplete = onDissolveCompleteCallback,
                                      onDissolveReflowStarted = onDissolveReflowStartedCallback,
@@ -3002,6 +3013,20 @@ fun HomeScreen(
             if (item != null) {
                 com.android.purebilibili.feature.home.components.VideoPreviewDialog(
                     video = item,
+                    isNotInterestedDissolving = previewDissolvingNotInterestedVideo?.bvid == item.bvid,
+                    onNotInterestedDissolveComplete = {
+                        if (previewDissolvingNotInterestedVideo?.bvid == item.bvid) {
+                            previewDissolvingNotInterestedVideo = null
+                            onDismissVideoCallback(item, false)
+                            targetVideoItemState.value = null
+                        }
+                    },
+                    keepOpenDuringNotInterestedDissolve = !systemReduceMotion &&
+                        isThanosEffectSupported(context) &&
+                        (previewDissolvingNotInterestedVideo == null ||
+                            previewDissolvingNotInterestedVideo?.bvid == item.bvid) &&
+                        dissolvingNotInterestedVideo == null &&
+                        pendingNotInterestedVideo == null,
                     onDismiss = { targetVideoItemState.value = null },
                     onPlay = {
                      // 1. Log click
@@ -3045,7 +3070,7 @@ fun HomeScreen(
                     )
                     targetVideoItemState.value = null
                 },
-                onNotInterested = { onDismissVideoCallback(item) },
+                onNotInterested = { onDismissVideoCallback(item, true) },
                 onBlockCreator = {
                     viewModel.blockCreator(item)
                     targetVideoItemState.value = null
@@ -3053,7 +3078,9 @@ fun HomeScreen(
                 onGetPreviewUrl = { bvid, cid ->
                     viewModel.getPreviewVideoUrl(bvid, cid)
                 },
-                hazeState = hazeState
+                hazeState = hazeState,
+                miuixBackdrop = readyHomeMiuixBackdrop,
+                modifier = Modifier.fillMaxSize(),
             )
             }
         }
