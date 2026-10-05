@@ -700,12 +700,27 @@ fun AppNavigation(
         val bottomPagerSaveableStateHolder = rememberSaveableStateHolder()
         val mainBottomPagerState = rememberMainBottomPagerState(bottomPagerState)
         var bottomPagerContentReady by remember { mutableStateOf(false) }
+        var preloadedBottomPagerItems by remember { mutableStateOf(emptySet<BottomNavItem>()) }
         LaunchedEffect(Unit) {
             withFrameNanos { }
             bottomPagerContentReady = true
         }
         LaunchedEffect(bottomPagerState.currentPage, mainBottomPagerState) {
             mainBottomPagerState.syncPage()
+        }
+        // Keep visited/transition participants mounted by tab identity, including after reorder.
+        LaunchedEffect(
+            visibleBottomBarItems,
+            bottomPagerState.currentPage,
+            mainBottomPagerState.selectedPage,
+            mainBottomPagerState.navigationStartPage,
+        ) {
+            val participants = setOf(
+                bottomPagerState.currentPage,
+                mainBottomPagerState.selectedPage,
+                mainBottomPagerState.navigationStartPage,
+            ).mapNotNull { visibleBottomBarItems.getOrNull(it) }
+            preloadedBottomPagerItems = preloadedBottomPagerItems + participants
         }
         LaunchedEffect(visibleBottomBarItems, mainBottomPagerState.selectedPage) {
             val lastPage = visibleBottomBarItems.lastIndex
@@ -1849,6 +1864,25 @@ fun AppNavigation(
         }
         // [New] Global Scroll Offset State
         val homeFeedScrollInProgressState = remember { androidx.compose.runtime.mutableStateOf(false) }
+        val bottomPagerBackgroundWorkAllowed = shouldAllowBottomPagerBackgroundWork(
+            isMainHostTop = currentNavigation3Key == BiliPaiNavKey.MainHost,
+            isCardTransitionIdle = videoCardTransitionClock.phase ==
+                com.android.purebilibili.core.ui.transition.VideoCardTransitionBackgroundPhase.IDLE &&
+                videoCardTransitionClock.settleState == VideoCardTransitionSettleState.Idle,
+            isPagerNavigating = mainBottomPagerState.isNavigating || bottomPagerState.isScrollInProgress,
+        )
+        val allowBottomPagerPreload = bottomPagerBackgroundWorkAllowed &&
+            !homeFeedScrollInProgressState.value
+        LaunchedEffect(allowBottomPagerPreload, visibleBottomBarItems) {
+            if (!allowBottomPagerPreload) return@LaunchedEffect
+            // A quiet window is a scheduling budget, not proof that all startup work completed.
+            preloadBottomPagerPages(
+                visibleItems = visibleBottomBarItems,
+                preloadedItems = { preloadedBottomPagerItems },
+                awaitFrame = { withFrameNanos { } },
+                onPreload = { preloadedBottomPagerItems = preloadedBottomPagerItems + it },
+            )
+        }
         LaunchedEffect(currentRoute, currentBottomNavItem) {
             scrollOffsetState.floatValue = 0f
             homeFeedScrollInProgressState.value = false
@@ -2322,7 +2356,7 @@ fun AppNavigation(
                                                 selectedPage = mainBottomPagerState.selectedPage,
                                                 isNavigating = mainBottomPagerState.isNavigating,
                                                 navigationStartPage = mainBottomPagerState.navigationStartPage,
-                                                contentReady = bottomPagerContentReady
+                                                contentReady = slotItem in preloadedBottomPagerItems
                                             )
                                         ) {
                                             val pageKey = bottomPagerNavKeyForItem(slotItem)
@@ -2330,11 +2364,16 @@ fun AppNavigation(
                                                 resolveBottomPagerSaveableStateKey(slotItem)
                                             ) {
                                                 CompositionLocalProvider(
-                                                    LocalVideoCardSharedElementSourceRoute provides pageKey.toLegacyRoute()
+                                                    LocalVideoCardSharedElementSourceRoute provides pageKey.toLegacyRoute(),
+                                                    com.android.purebilibili.core.ui.components.LocalPageImageLoadingAllowed provides (
+                                                        page == bottomPagerState.settledPage &&
+                                                            bottomPagerBackgroundWorkAllowed
+                                                    ),
                                                 ) {
                                                     RenderNavigationContent(
                                                         key = pageKey,
-                                                        isBottomPagerPageActive = page == bottomPagerState.settledPage,
+                                                        isBottomPagerPageActive = page == bottomPagerState.settledPage &&
+                                                            bottomPagerBackgroundWorkAllowed,
                                                         isBottomPagerHosted = true,
                                                     )
                                                 }

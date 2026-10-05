@@ -1,6 +1,8 @@
 // 文件路径: feature/search/SearchScreen.kt
 package com.android.purebilibili.feature.search
 
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.drawscope.clipRect
 import com.android.purebilibili.core.util.HtmlEntityUtils
 import com.android.purebilibili.core.ui.LocalAppThemeConfig
 import com.android.purebilibili.core.ui.components.resolveVideoListColumns
@@ -1178,7 +1180,12 @@ fun SearchScreen(
     val resultBottomPadding = resolveBottomSafeAreaPadding(
         navigationBarsBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding(),
         extraBottomPadding = 16.dp
-    )
+    ) + if (com.android.purebilibili.core.ui.rememberNowPlayingBarOverlayVisible()) {
+        // 听视频小横条悬浮时统一上浮避让（与首页/稍后再看一致）
+        com.android.purebilibili.core.ui.NowPlayingBarOverlayAvoidancePadding
+    } else {
+        0.dp
+    }
 
     AppScaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
@@ -1259,7 +1266,16 @@ fun SearchScreen(
                                 0f
                             }
                             Layout(
-                                modifier = Modifier.clipToBounds(),
+                                modifier = Modifier
+                                    .clipToBounds()
+                                    .drawWithContent {
+                                        // The retained status-bar spacer is not a viewport for
+                                        // collapsed controls; clip below its safe inset.
+                                        val top = searchStatusBarHeightPx.coerceIn(0f, size.height)
+                                        if (size.height > top) {
+                                            clipRect(top = top) { this@drawWithContent.drawContent() }
+                                        }
+                                    },
                                 content = {
                                     Spacer(modifier = Modifier.windowInsetsTopHeight(WindowInsets.statusBars))
                                         Column(

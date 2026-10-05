@@ -248,6 +248,13 @@ fun LiveAreaDetailScreen(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
     ) { innerPadding ->
         val liveAreaBackdrop = rememberLayerBackdrop()
+        // 听视频小横条悬浮时统一上浮避让（与首页/稍后再看一致）
+        val liveAreaBottomPadding = LocalBottomBarContentPadding.current +
+            if (com.android.purebilibili.core.ui.rememberNowPlayingBarOverlayVisible()) {
+                com.android.purebilibili.core.ui.NowPlayingBarOverlayAvoidancePadding
+            } else {
+                0.dp
+            }
         val topContentPadding = innerPadding.calculateTopPadding() + AppSpacingTokens.Small
         Box(
             modifier = Modifier
@@ -267,7 +274,7 @@ fun LiveAreaDetailScreen(
                         start = metrics.safeSpaceDp.dp,
                         end = metrics.safeSpaceDp.dp,
                         top = topContentPadding,
-                        bottom = LocalBottomBarContentPadding.current,
+                        bottom = liveAreaBottomPadding,
                     ),
                     spacing = metrics.cardSpaceDp.dp,
                 )
@@ -293,7 +300,7 @@ fun LiveAreaDetailScreen(
                         start = metrics.safeSpaceDp.dp,
                         end = metrics.safeSpaceDp.dp,
                         top = topContentPadding,
-                        bottom = LocalBottomBarContentPadding.current,
+                        bottom = liveAreaBottomPadding,
                     ),
                     horizontalArrangement = Arrangement.spacedBy(metrics.cardSpaceDp.dp),
                     verticalArrangement = Arrangement.spacedBy(metrics.cardSpaceDp.dp),
@@ -341,7 +348,7 @@ fun LiveAreaDetailScreen(
                     .align(Alignment.BottomEnd)
                     .padding(
                         end = AppSpacingTokens.Large,
-                        bottom = LocalBottomBarContentPadding.current + AppSpacingTokens.Medium,
+                        bottom = liveAreaBottomPadding + AppSpacingTokens.Medium,
                     ),
                 backdrop = liveAreaBackdrop,
             )

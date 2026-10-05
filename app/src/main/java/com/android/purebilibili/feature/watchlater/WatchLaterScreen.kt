@@ -63,7 +63,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
-import coil3.compose.AsyncImage
+import com.android.purebilibili.core.ui.components.PageAwareAsyncImage
 import coil3.request.ImageRequest
 import com.android.purebilibili.core.coroutines.AppScope
 import com.android.purebilibili.core.refresh.WatchLaterRefreshBus
@@ -215,6 +215,12 @@ data class WatchLaterUiState(
  * 稍后再看 ViewModel
  */
 class WatchLaterViewModel(application: Application) : AndroidViewModel(application) {
+    private var isPageActive = false
+
+    fun setPageActive(active: Boolean) {
+        isPageActive = active
+    }
+
     private val _uiState = MutableStateFlow(WatchLaterUiState(isLoading = true))
     val uiState = _uiState.asStateFlow()
 
@@ -232,7 +238,8 @@ class WatchLaterViewModel(application: Application) : AndroidViewModel(applicati
     private fun observeWatchLaterRefresh() {
         viewModelScope.launch {
             WatchLaterRefreshBus.changes.collect {
-                loadData(showLoading = false)
+                // The navigation host reloads when this page becomes active again.
+                if (isPageActive) loadData(showLoading = false)
             }
         }
     }
@@ -667,6 +674,10 @@ fun WatchLaterScreen(
     scrollToTopChannel: Channel<Unit>? = null,
     isCurrentPage: Boolean = true
 ) {
+    DisposableEffect(viewModel, isCurrentPage) {
+        viewModel.setPageActive(isCurrentPage)
+        onDispose { viewModel.setPageActive(false) }
+    }
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     // PiliPlus 式默认单列，双指缩放调节列数
     val windowSizeClass = LocalWindowSizeClass.current
@@ -1169,7 +1180,15 @@ fun WatchLaterScreen(
         },
         containerColor = AppSurfaceTokens.groupedListContainer()
     ) { padding ->
-        val bottomContentPadding = watchLaterBottomPadding
+        // 听视频小横条悬浮在内容上方时，列表与“播放全部”FAB 上浮避让（与首页 76dp 预留一致）
+        val nowPlayingBarOverlayVisible = com.android.purebilibili.core.ui
+            .rememberNowPlayingBarOverlayVisible()
+        val bottomContentPadding = watchLaterBottomPadding +
+            if (nowPlayingBarOverlayVisible) {
+                com.android.purebilibili.core.ui.NowPlayingBarOverlayAvoidancePadding
+            } else {
+                0.dp
+            }
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -1675,7 +1694,7 @@ private fun WatchLaterVideoCard(
             }
         },
         coverContent = {
-            AsyncImage(
+            PageAwareAsyncImage(
                 model = stationaryCoverRequest,
                 contentDescription = item.title,
                 contentScale = ContentScale.Crop,

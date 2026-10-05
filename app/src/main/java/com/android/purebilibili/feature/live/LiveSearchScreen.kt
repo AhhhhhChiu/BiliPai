@@ -345,6 +345,13 @@ fun LiveSearchScreen(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
     ) { innerPadding ->
         val liveSearchBackdrop = rememberLayerBackdrop()
+        // 听视频小横条悬浮时统一上浮避让（与首页/稍后再看一致）
+        val liveSearchBottomPadding = LocalBottomBarContentPadding.current +
+            if (com.android.purebilibili.core.ui.rememberNowPlayingBarOverlayVisible()) {
+                com.android.purebilibili.core.ui.NowPlayingBarOverlayAvoidancePadding
+            } else {
+                0.dp
+            }
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -366,7 +373,7 @@ fun LiveSearchScreen(
                                 start = metrics.safeSpaceDp.dp,
                                 end = metrics.safeSpaceDp.dp,
                                 top = innerPadding.calculateTopPadding() + AppSpacingTokens.Medium,
-                                bottom = LocalBottomBarContentPadding.current,
+                                bottom = liveSearchBottomPadding,
                             ),
                             spacing = metrics.cardSpaceDp.dp,
                         )
@@ -377,7 +384,7 @@ fun LiveSearchScreen(
                                 start = metrics.safeSpaceDp.dp,
                                 end = metrics.safeSpaceDp.dp,
                                 top = innerPadding.calculateTopPadding() + AppSpacingTokens.Medium,
-                                bottom = LocalBottomBarContentPadding.current,
+                                bottom = liveSearchBottomPadding,
                             ),
                         )
                     }
@@ -393,7 +400,7 @@ fun LiveSearchScreen(
                             start = metrics.safeSpaceDp.dp,
                             end = metrics.safeSpaceDp.dp,
                             top = innerPadding.calculateTopPadding() + AppSpacingTokens.Medium,
-                            bottom = LocalBottomBarContentPadding.current,
+                            bottom = liveSearchBottomPadding,
                         ),
                         horizontalArrangement = Arrangement.spacedBy(metrics.cardSpaceDp.dp),
                         verticalArrangement = Arrangement.spacedBy(metrics.cardSpaceDp.dp),
@@ -429,7 +436,7 @@ fun LiveSearchScreen(
                             start = metrics.safeSpaceDp.dp,
                             end = metrics.safeSpaceDp.dp,
                             top = innerPadding.calculateTopPadding() + AppSpacingTokens.Medium,
-                            bottom = LocalBottomBarContentPadding.current,
+                            bottom = liveSearchBottomPadding,
                         ),
                         verticalArrangement = Arrangement.spacedBy(AppSpacingTokens.Medium),
                     ) {
@@ -471,7 +478,7 @@ fun LiveSearchScreen(
                     .align(Alignment.BottomEnd)
                     .padding(
                         end = AppSpacingTokens.Large,
-                        bottom = LocalBottomBarContentPadding.current + AppSpacingTokens.Medium,
+                        bottom = liveSearchBottomPadding + AppSpacingTokens.Medium,
                     ),
                 backdrop = liveSearchBackdrop,
             )
