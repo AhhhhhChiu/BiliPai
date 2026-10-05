@@ -60,7 +60,13 @@ internal fun resolveLivePlaybackErrorRecovery(
             PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS,
             PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED,
             PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT,
-            PlaybackException.ERROR_CODE_IO_UNSPECIFIED
+            PlaybackException.ERROR_CODE_IO_UNSPECIFIED,
+            // 音频/视频解码器瞬时失败（硬件解码器被系统回收等）：切换源会重新 prepare，
+            // 强制解码器重新初始化并走软件兜底，避免"画面正常、声音丢失"后一直哑着。
+            PlaybackException.ERROR_CODE_DECODING_FAILED,
+            PlaybackException.ERROR_CODE_DECODER_INIT_FAILED,
+            PlaybackException.ERROR_CODE_AUDIO_TRACK_INIT_FAILED,
+            PlaybackException.ERROR_CODE_AUDIO_TRACK_WRITE_FAILED
         )
     ) {
         LivePlaybackErrorRecovery.TRY_NEXT_SOURCE

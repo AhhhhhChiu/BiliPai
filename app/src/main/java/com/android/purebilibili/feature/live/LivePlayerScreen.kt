@@ -74,6 +74,8 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil3.compose.AsyncImage
+import androidx.media3.common.AudioAttributes
+import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.common.TrackSelectionParameters
@@ -609,8 +611,23 @@ fun LivePlayerScreen(
     }
 
     val exoPlayer = remember(dataSourceFactory) {
+        // 与视频/番剧/小窗播放器一致：显式声明媒体用途并接管音频焦点，
+        // 否则直播忽略用户的 audio_focus_enabled 开关，被其他音频短暂抢占后偶发丢声。
+        val handleAudioFocus = SettingsManager.getAudioFocusEnabledSync(context)
         ExoPlayer.Builder(context)
+            .setRenderersFactory(
+                androidx.media3.exoplayer.DefaultRenderersFactory(context)
+                    .setEnableDecoderFallback(true)
+            )
             .setMediaSourceFactory(DefaultMediaSourceFactory(dataSourceFactory))
+            .setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setUsage(C.USAGE_MEDIA)
+                    .setContentType(C.AUDIO_CONTENT_TYPE_MOVIE)
+                    .build(),
+                /* handleAudioFocus= */ handleAudioFocus,
+            )
+            .setHandleAudioBecomingNoisy(true)
             .build().apply { playWhenReady = true }
     }
 

@@ -75,6 +75,24 @@ class LivePlaybackPolicyTest {
     }
 
     @Test
+    fun `audio and video decoder failures should try next source`() {
+        assertEquals(
+            LivePlaybackErrorRecovery.TRY_NEXT_SOURCE,
+            resolveLivePlaybackErrorRecovery(
+                errorCode = PlaybackException.ERROR_CODE_AUDIO_TRACK_WRITE_FAILED,
+                httpResponseCode = null
+            )
+        )
+        assertEquals(
+            LivePlaybackErrorRecovery.TRY_NEXT_SOURCE,
+            resolveLivePlaybackErrorRecovery(
+                errorCode = PlaybackException.ERROR_CODE_DECODING_FAILED,
+                httpResponseCode = null
+            )
+        )
+    }
+
+    @Test
     fun `unexpected ended state recovers only with foreground playback intent`() {
         assertTrue(
             shouldRecoverUnexpectedLiveEnd(
