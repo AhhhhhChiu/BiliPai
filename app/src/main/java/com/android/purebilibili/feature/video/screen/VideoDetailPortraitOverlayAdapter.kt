@@ -141,8 +141,8 @@ internal fun VideoDetailPortraitOverlayAdapter(
             // 竖屏流推荐:优先用 Story 短视频流(按当前视频请求,内容多样化),
             // 避免此前直接使用同主题相关推荐导致首屏全是相似视频/同一 UP 主;
             // Story 流不可用时才回退相关推荐。
-            var portraitRecommendations by remember(info.bvid) {
-                mutableStateOf(playableState.related)
+            var portraitStoryRecommendations by remember(info.bvid) {
+                mutableStateOf(emptyList<com.android.purebilibili.data.model.response.RelatedVideo>())
             }
             LaunchedEffect(showPortraitFullscreen, info.bvid) {
                 if (!showPortraitFullscreen) return@LaunchedEffect
@@ -154,8 +154,15 @@ internal fun VideoDetailPortraitOverlayAdapter(
                     .mapNotNull(::storyItemToRelatedVideo)
                     .filter { it.bvid.isNotBlank() && it.bvid != info.bvid }
                 if (storyRecommendations.isNotEmpty()) {
-                    portraitRecommendations = storyRecommendations
+                    portraitStoryRecommendations = storyRecommendations
                 }
+            }
+            // 相关推荐在 Success 之后异步回填，这里跟随状态取值，
+            // 避免 remember 初值捕获到空列表后竖屏流再也拿不到回退数据。
+            val portraitRecommendations = if (portraitStoryRecommendations.isNotEmpty()) {
+                portraitStoryRecommendations
+            } else {
+                playableState.related
             }
             PortraitVideoPager(
                 initialBvid = initialBvidOverride ?: info.bvid,

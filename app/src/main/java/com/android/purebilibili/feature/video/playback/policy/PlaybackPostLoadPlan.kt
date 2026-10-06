@@ -3,6 +3,7 @@ package com.android.purebilibili.feature.video.playback.policy
 internal enum class PlaybackPostLoadTask {
     PLAYER_INFO,
     VIDEO_SHOT,
+    RELATED_VIDEOS,
     REFRESH_DEFERRED_SIGNALS,
     LOAD_FOLLOWING_MIDS,
     OWNER_STATS,
@@ -32,9 +33,15 @@ internal fun buildPlaybackPostLoadPlan(
             task = PlaybackPostLoadTask.VIDEO_SHOT,
             delayMs = 150L
         ),
+        // 相关推荐：首屏不再等待它，改到内容首帧之后补数据
+        PlaybackPostLoadTaskSpec(
+            task = PlaybackPostLoadTask.RELATED_VIDEOS,
+            delayMs = 150L
+        ),
+        // 粉丝/投稿数：尽早回填，避免 UP 卡片第二行长期空缺造成布局位移
         PlaybackPostLoadTaskSpec(
             task = PlaybackPostLoadTask.OWNER_STATS,
-            delayMs = 450L
+            delayMs = 200L
         ),
         PlaybackPostLoadTaskSpec(
             task = PlaybackPostLoadTask.VIDEO_TAGS,

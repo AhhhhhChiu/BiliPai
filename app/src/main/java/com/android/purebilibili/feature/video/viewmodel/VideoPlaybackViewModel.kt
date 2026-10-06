@@ -3596,6 +3596,7 @@ class VideoPlaybackViewModel(application: Application) : AndroidViewModel(applic
                         )
 
                         scheduleDeferredPostLoadWork(
+                            requestBvid = playbackRequest.bvid,
                             loadedBvid = result.info.bvid,
                             loadedCid = result.info.cid,
                             loadedAid = result.info.aid,
@@ -5560,6 +5561,29 @@ class VideoPlaybackViewModel(application: Application) : AndroidViewModel(applic
             toast("已开始下载音频")
         } else {
             toast("该任务已在下载中或已完成")
+        }
+    }
+
+    //  [首屏优化] 相关推荐不再阻塞骨架屏，在内容首帧之后补数据并重建播放队列。
+    private fun loadRelatedVideos(requestBvid: String, canonicalBvid: String) {
+        val relatedBvid = com.android.purebilibili.feature.video.usecase.resolveRelatedVideosRequestBvid(
+            requestBvid = requestBvid,
+            canonicalBvid = canonicalBvid
+        )
+        if (relatedBvid.isEmpty()) return
+        viewModelScope.launch {
+            val related = VideoRepository.getRelatedVideos(relatedBvid)
+            if (related.isEmpty()) return@launch
+            _uiState.update { current ->
+                if (current is VideoPlaybackUiState.Success && current.info.bvid == canonicalBvid) {
+                    current.copy(related = related)
+                } else {
+                    current
+                }
+            }
+            val applied = _uiState.value as? VideoPlaybackUiState.Success ?: return@launch
+            if (applied.info.bvid != canonicalBvid) return@launch
+            updatePlaylist(applied.info, applied.related)
         }
     }
 
@@ -7959,6 +7983,7 @@ class VideoPlaybackViewModel(application: Application) : AndroidViewModel(applic
     }
 
     private fun scheduleDeferredPostLoadWork(
+        requestBvid: String,
         loadedBvid: String,
         loadedCid: Long,
         loadedAid: Long,
@@ -8001,6 +8026,10 @@ class VideoPlaybackViewModel(application: Application) : AndroidViewModel(applic
                                 requestToken = requestToken
                             )
                             PlaybackPostLoadTask.VIDEO_SHOT -> loadVideoshot(loadedBvid, loadedCid)
+                            PlaybackPostLoadTask.RELATED_VIDEOS -> loadRelatedVideos(
+                                requestBvid = requestBvid,
+                                canonicalBvid = loadedBvid
+                            )
                             PlaybackPostLoadTask.REFRESH_DEFERRED_SIGNALS -> refreshDeferredPlaybackSignals(
                                 bvid = loadedBvid,
                                 aid = loadedAid,

@@ -30,6 +30,20 @@ class PlaybackPostLoadPlanPolicyTest {
     }
 
     @Test
+    fun `related videos should be scheduled after the first content frame`() {
+        val plan = buildPlaybackPostLoadPlan(
+            isLoggedIn = false,
+            shouldShowOnlineCount = false
+        )
+
+        val relatedDelay = plan.firstDelayOf(PlaybackPostLoadTask.RELATED_VIDEOS)
+        val ownerStatsDelay = plan.firstDelayOf(PlaybackPostLoadTask.OWNER_STATS)
+
+        assertEquals(150L, relatedDelay)
+        assertTrue(relatedDelay <= ownerStatsDelay)
+    }
+
+    @Test
     fun `logged in plan should include deferred auth dependent enrichments`() {
         val plan = buildPlaybackPostLoadPlan(
             isLoggedIn = true,

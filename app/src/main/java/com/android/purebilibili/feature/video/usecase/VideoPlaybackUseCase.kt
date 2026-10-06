@@ -449,29 +449,15 @@ class VideoPlaybackUseCase(
             
             onProgress("Loading video info...")
             
-            //  [性能优化] 并行请求视频详情、相关推荐。
+            //  [首屏优化] 骨架屏只等详情与播放地址两路请求。
+            // 相关推荐与首屏视觉无关，不再参与首屏的结构化并发：
+            // 它由 Success 之后的 RELATED_VIDEOS 任务补全，RTT 不计入骨架屏时长。
             // 表情映射在首帧链路中跳过，避免自动播放起播被非关键请求阻塞。
-            val (detailResult, relatedVideos, emoteMap) = kotlinx.coroutines.coroutineScope {
+            val (detailResult, emoteMap) = kotlinx.coroutines.coroutineScope {
                 val bootstrapMode = resolvePlaybackBootstrapMode(
                     bvid = bvid,
                     cid = cid
                 )
-                val fetchRelatedAfterDetail = shouldFetchRelatedVideosAfterVideoDetail(bvid)
-                val relatedDeferred: kotlinx.coroutines.Deferred<List<RelatedVideo>>? = if (fetchRelatedAfterDetail) {
-                    null
-                } else {
-                    async {
-                        val relatedBvid = resolveRelatedVideosRequestBvid(
-                            requestBvid = bvid,
-                            canonicalBvid = ""
-                        )
-                        if (relatedBvid.isNotEmpty()) {
-                            VideoRepository.getRelatedVideos(relatedBvid)
-                        } else {
-                            emptyList()
-                        }
-                    }
-                }
                 val emoteMap = if (com.android.purebilibili.data.repository.shouldFetchCommentEmoteMapOnVideoLoad()) {
                     com.android.purebilibili.data.repository.CommentRepository.getEmoteMap()
                 } else {
@@ -522,22 +508,7 @@ class VideoPlaybackUseCase(
                     }
                 }
 
-                val relatedVideos = relatedDeferred?.await() ?: mergedDetailResult.fold(
-                    onSuccess = { (info, _) ->
-                        val relatedBvid = resolveRelatedVideosRequestBvid(
-                            requestBvid = bvid,
-                            canonicalBvid = info.bvid
-                        )
-                        if (relatedBvid.isNotEmpty()) {
-                            VideoRepository.getRelatedVideos(relatedBvid)
-                        } else {
-                            emptyList()
-                        }
-                    },
-                    onFailure = { emptyList() }
-                )
-
-                Triple(mergedDetailResult, relatedVideos, emoteMap)
+                mergedDetailResult to emoteMap
             }
             
             return detailResult.fold(
@@ -676,7 +647,8 @@ class VideoPlaybackUseCase(
                         info = info,
                         playUrl = selection.videoUrl,
                         audioUrl = selection.audioUrl,
-                        related = relatedVideos,
+                        // 相关推荐由 Success 后的 RELATED_VIDEOS 任务回填
+                        related = emptyList(),
                         quality = selection.actualQuality,
                         resolvedTargetQuality = targetQn,
                         qualityIds = selection.qualityIds,
