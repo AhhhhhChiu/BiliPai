@@ -35,6 +35,21 @@ internal fun resolveUpStatsText(
     return parts.takeIf { it.isNotEmpty() }?.joinToString(" · ")
 }
 
+/**
+ * 详情页 UP 卡片的粉丝/投稿数是 Success 之后才回填的。
+ * 两个值都还是 null 说明尚未回填，此时返回占位文案保住同一行高度，
+ * 回填时只替换文案不改变布局，避免 UP 卡片整体下移的位移感。
+ * 已回填但统计为空（0）时仍返回 null，保持“不展示无效数据”的原行为。
+ */
+internal fun resolveDisplayUpStatsText(
+    followerCount: Int?,
+    videoCount: Int?
+): String? {
+    resolveUpStatsText(followerCount, videoCount)?.let { return it }
+    val pending = followerCount == null && videoCount == null
+    return if (pending) " " else null
+}
+
 internal fun shouldRenderUpBadgeTrailingSlot(
     hasTrailingContent: Boolean,
     reserveTrailingSlot: Boolean

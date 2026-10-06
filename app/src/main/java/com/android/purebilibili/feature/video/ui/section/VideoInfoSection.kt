@@ -71,7 +71,7 @@ import com.android.purebilibili.core.ui.UserAvatarCornerMarkBadge
 import com.android.purebilibili.core.ui.resolveUserAvatarCornerMark
 import com.android.purebilibili.core.ui.components.AppIconButton
 import com.android.purebilibili.core.ui.components.AppSurface
-import com.android.purebilibili.core.ui.components.resolveUpStatsText
+import com.android.purebilibili.core.ui.components.resolveDisplayUpStatsText
 import com.android.purebilibili.core.ui.components.resolveUpNameColor
 import com.android.purebilibili.core.ui.components.UserUpBadge
 import com.android.purebilibili.core.theme.AppUiStyle
@@ -1050,7 +1050,8 @@ fun UpInfoSection(
             speedSettings = sharedTransitionSpeedSettings
         )
     }
-    val upStatsText = resolveUpStatsText(
+    // 粉丝/投稿数 Success 之后才回填；未回填时占位保住行高，避免 UP 卡片整体下移
+    val displayUpStatsText = resolveDisplayUpStatsText(
         followerCount = followerCount,
         videoCount = videoCount
     )
@@ -1293,9 +1294,9 @@ fun UpInfoSection(
                             if (playerControlVisibility.showFollowButton) {
                                 followButtonContent()
                             }
-                            if (!upStatsText.isNullOrBlank()) {
+                            if (displayUpStatsText != null) {
                                 AppText(
-                                    text = upStatsText,
+                                    text = displayUpStatsText,
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.82f),
                                     maxLines = 1,
@@ -1323,10 +1324,10 @@ fun UpInfoSection(
                     // UP owner name row
                     Column(modifier = Modifier.weight(1f)) {
                         upNameContent(Modifier)
-                        if (!upStatsText.isNullOrBlank()) {
+                        if (displayUpStatsText != null) {
                             Spacer(modifier = Modifier.height(2.dp))
                             AppText(
-                                text = upStatsText,
+                                text = displayUpStatsText,
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.82f),
                                 maxLines = 1,

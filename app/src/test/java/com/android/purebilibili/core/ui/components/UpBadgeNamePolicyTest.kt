@@ -35,6 +35,27 @@ class UpBadgeNamePolicyTest {
     }
 
     @Test
+    fun `display stats placeholder holds row height while stats are pending`() {
+        assertEquals(
+            " ",
+            resolveDisplayUpStatsText(followerCount = null, videoCount = null)
+        )
+    }
+
+    @Test
+    fun `display stats placeholder disappears once stats are backfilled`() {
+        assertEquals(
+            "粉丝 1200 · 视频 56",
+            resolveDisplayUpStatsText(followerCount = 1200, videoCount = 56)
+        )
+        assertEquals(
+            "粉丝 328",
+            resolveDisplayUpStatsText(followerCount = 328, videoCount = null)
+        )
+        assertNull(resolveDisplayUpStatsText(followerCount = 0, videoCount = 0))
+    }
+
+    @Test
     fun `up badge trailing slot stays reserved when requested`() {
         assertTrue(
             shouldRenderUpBadgeTrailingSlot(
